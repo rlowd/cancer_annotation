@@ -1,27 +1,35 @@
 #!/usr/bin/python
 
-################
-## Programmer : Rebecca
-## Date: Sept 2015 -- modified from <union_REclass_space.py>
-## Purpose: Create output files of "regulatory element space" *for each cell type* 
-##          from chromHMM for all roadmap data. "RE classes" are regulatory, transcribed, and silent.
+################################################################
+################################################################
 ##
-## Input: text file with list of chromHMM file locations to parse
-## Outputs include:
-##   * report file with # of each chromatin state element and total # of bp for that element in hg19.
-##   * bedfile for each RE class for each cell type (3x # CTs input) with non overlapping genomic positions in hg19. 
+##  Programmer : Rebecca
+##  Date: Sept 2015 -- modified from <union_REclass_space.py>
 ##
-## Usage: python RE_space.py <file list> <output prefix>
-################
-
+##  Purpose: Create output files of "regulatory element space" *for each cell type* 
+##           from chromHMM for all roadmap data. "RE classes" are regulatory, transcribed, and silent.
+##
+##  Input: 
+##    * text file with list of chromHMM file locations to parse
+##    * prefix for vector file outputs
+##    * directory location for ouputs
+##
+##  Outputs include:
+##    * /outdir/vector/ contains 3 files: pref+regul, tx, or quies 
+##      contaiing a vector of bp length for that element in each cell type quiered.
+##    * /outdir/bedfile/ contains 1 bedfile for each RE class for each cell type (3x # CTs input) 
+##      of non overlapping genomic positions in hg19. 
+##
+##  Usage: python RE_space.py <file list> <output prefix> <output dir>
+## 
+################################################################
+################################################################
 
 from itertools import izip
-import sys,gzip
-#import array
+import sys,gzip,os
 
-
-if len(sys.argv) != 2:
-    print '''usage: {0} <file list> <output prefix>\n\n'''.format(sys.argv[0])
+if len(sys.argv) != 3:
+    print '''usage: {0} <file list> <output prefix> <bedfiles output dir>\n\n'''.format(sys.argv[0])
 
 def start(X):
     try:
@@ -35,29 +43,35 @@ def start(X):
 
 def read_data():
 
-    vec_pref = sys.argv[2]
+    dirPath = sys.argv[3]
+    vec_dir = dirPath+"/vector/"
+    vec_pref = vec_dir+sys.argv[2]
+    
+    if not os.path.exists(vec_dir):
+        os.makedirs(vec_dir)
 
-## create vector files that will have a list/vector of total bp for each class
+    print "creating vector files at: "+vec_pref+"\n"   
     regul_vec = vec_pref+"_regul_1-2-3-6-7.vect"
     tx_vec = vec_pref+"_transcribed_4-5.vect"
     quies_vec = vec_pref+"_quies_repeat.vect"
 
-    print "create output files\n"
-    print "outfile prefix: "+vec_pref+"\n"
-    stat = pref+"_RE_stats.report"
-    rep = pref+"_roadmap_data.report"
-    regul = pref+"_regul_1-2-3-6-7.bed"
-    tx = pref+"_transcribed_4-5.bed"
-    quies = pref+"_quies_repeat.bed"
-
     Ef = start(sys.argv[1])
     for f in Ef: 
         dat = gzip.open( f.rstrip("\n"),"r" ).readlines()
-        repf.write( f+" contains "+str(len(dat))+" lines\n" )
         print "opening "+f+" ...\n"
+               
+        cellName = f.split("/")[2].split(".")[0]
+        bed_dir = dirPath+"/bedfile/"
+        pref = bed_dir+cellName
+        
+        if not os.path.exists(bed_dir):
+            os.makedirs(bed_dir)
 
-        pref = f
-
+        print "creating bedfiles at: "+pref+"\n"
+        regul = pref+"_regul_1-2-3-6-7.bed"
+        tx = pref+"_transcribed_4-5.bed"
+        quies = pref+"_quies_repeat.bed"
+        
         regul_num = 0
         regul_bp = 0
         tx_num = 0
@@ -67,13 +81,7 @@ def read_data():
         repeat_num = 0
         repeat_bp = 0
 
-        print "create output files\n"
-        print "outfile prefix: "+pref+"\n"
-        regul = pref+"_regul_1-2-3-6-7.bed"
-        tx = pref+"_transcribed_4-5.bed"
-        quies = pref+"_quies_repeat.bed"
-
-        with open( regul,"w" ) as regulf, open( tx,"w" ) as txf, open( quies,"w" ) as quiesf, open( rep,"w" ) as repf:
+        with open( regul,"w" ) as regulf, open( tx,"w" ) as txf, open( quies,"w" ) as quiesf:
 
             for line in dat:
                 l = line.split("\t")
@@ -94,13 +102,13 @@ def read_data():
         txf.close()
         quiesf.close()
 
-        with open( regul_vec,"w" ) as rvf:
+        with open( regul_vec,"a" ) as rvf:
             rvf.write(str(regul_num)+"\n")
         rvf.close()
-        with open( tx_vec,"w" ) as tvf:
+        with open( tx_vec,"a" ) as tvf:
             tvf.write(str(tx_num)+"\n")
         tvf.close()
-        with open( quies_vec,"w" ) as qvf:
+        with open( quies_vec,"a" ) as qvf:
             qvf.write(str(quies_num)+"\n")
         qvf.close()
 
