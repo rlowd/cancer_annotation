@@ -9,6 +9,7 @@ library(dplyr)
 library(ggplot2)
 library(reshape2)
 library(gplots)
+library(RColorBrewer)
 # args<-commandArgs(TRUE)
 
 #####
@@ -116,8 +117,13 @@ lmat = rbind(c(0,3),c(2,1),c(0,4))
 lhei = c(1,4,1.2)
 lwid = c(1.5,4)
 
+# RC_palette = c("#2171b5","#f7fbff","#fee0d2","#fcbba1","#fc9272","#fb6a4a","#ef3b2c","#cb181d")
+col = c("darkgray","white","lightyellow","yellow","gold","orange","red","darkred")
+
 png("enrichm_allEID.png")
 heatmap.2(t(mat), cexCol = 1, dendrogram = "both", trace="none",
-          lmat=lmat, lhei = lhei, lwid = lwid,
-          main="Enrichment of GWAS SNPs in\nRegulatory element classes by EID")
+          lmat=lmat, lhei = lhei, lwid = lwid, 
+          col=col, 
+          breaks=c(0,0.9,1.1,1.5,1.75,2,2.25,2.75,3),
+          main="Enrichment of cancer-related GWAS SNPs in\nRegulatory element classes by EID")
 dev.off();
