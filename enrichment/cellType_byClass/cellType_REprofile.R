@@ -1,3 +1,21 @@
+######################################################################
+######################################################################
+##
+## Rebecca Lowdon | 2 Oct 2015
+## 
+## This code reads in the SNP annotations calculated from 
+## the counts.sh script [INPUT] and assembles them into a matrix 
+## with 5 columns: EID (#), rs accession, regulatory, transcribed, and silent.
+## The last 3 columns have a value of 0 or 1 depending on which class 
+## the SNP falls in the given EID annotation file.
+##
+## Usage: 
+## * interactive: edit line 27 to include file with list of input files
+## * command line: /apps/bin/Rscript cellType_REprofile.R <file list>
+##
+######################################################################
+######################################################################
+
 library(dplyr)
 library(ggplot2)
 library(reshape2)
@@ -44,29 +62,3 @@ g <- g + theme(axis.text.y = element_blank())
 png("EID_by_RS_profiles.png")
 g
 dev.off();
-
-#####
-## Dendrogram with pheatmap
-
-library(pheatmap)
-library(RColorBrewer)
-
-regul <- filter(m, variable=="regulatory") %>% select(1,2,4)
-
-pheatmap(regul)
-
-# m <- rbind(c(1,2),c(3,4))
-# layout(m)
-# 
-# par(mfrow=c(2,2))
-# for( i in 1:length(fl$V1) ){
-#   dat <- read.delim2(paste(fl$V1[1]),skip=1,header=FALSE)
-#   dat <- select(dat,4,9:11)
-#   colnames(dat)<-c("rs","regulatory","transcribed","silent")
-#   mat <- cbind(as.numeric(paste(dat[,2])),as.numeric(paste(dat[,3])),as.numeric(paste(dat[,4])))
-#   p <- pheatmap(mat, cluster_rows = FALSE, cluster_cols = FALSE,
-#              labels_col = colnames(dat[,2:4]), legend = F)
-# } 
-
-
-
