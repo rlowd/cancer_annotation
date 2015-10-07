@@ -103,13 +103,13 @@ def read_data():
         quiesf.close()
 
         with open( regul_vec,"a" ) as rvf:
-            rvf.write(str(regul_num)+"\n")
+            rvf.write(str(regul_bp)+"\n")
         rvf.close()
         with open( tx_vec,"a" ) as tvf:
-            tvf.write(str(tx_num)+"\n")
+            tvf.write(str(tx_bp)+"\n")
         tvf.close()
         with open( quies_vec,"a" ) as qvf:
-            qvf.write(str(quies_num)+"\n")
+            qvf.write(str(quies_bp)+"\n")
         qvf.close()
 
 if __name__=="__main__":

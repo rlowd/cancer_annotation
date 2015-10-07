@@ -34,7 +34,7 @@ colnames(d)<-c("EID","rs","regulatory","transcribed","silent")
 for( i in 1:3 ){
   try(dat <- read.delim2(paste(fl$V1[i]),skip=1,header=FALSE),TRUE)
   try(dat$V12 <- c(i))
-  try(dat <- select(dat, 12,4,9:11))
+  try(dat <- cbind(dat[,12],dat[,4],dat[,9:11]))
   try(colnames(dat)<-c("EID","rs","regulatory","transcribed","silent"))
   try(d <- rbind(d, dat),TRUE)
 }  

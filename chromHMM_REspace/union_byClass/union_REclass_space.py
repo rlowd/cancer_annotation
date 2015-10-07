@@ -8,17 +8,17 @@
 ##   * report file with # of each chromatin state element and total # of bp for that element in hg19.
 ##   * bedfile for each chromatin state with non overlapping genomic positions in hg19. 
 ##
-## Usage: python RE_space.py <file list> <output prefix>
+## Usage: python RE_space.py <file list> <output prefix> <bedfiles output dir>
 ################
 
 
 from itertools import izip
-import sys,gzip
-#import array
+import sys,gzip,os
+from datetime import datetime
+from time import strftime
 
-
-if len(sys.argv) != 2:
-    print '''usage: {0} <file list> <output prefix>\n\n'''.format(sys.argv[0])
+if len(sys.argv) != 3:
+    print '''usage: {0} <file list> <output prefix> <bedfiles output dir>\n\n'''.format(sys.argv[0])
 
 def start(X):
     try:
@@ -31,8 +31,15 @@ def start(X):
         sys.exit(1)
 
 def read_data():
-
-    pref = sys.argv[2]
+    
+    d = datetime.now()
+    date = d.strftime("%Y_%m_%d")
+    dirPath = sys.argv[3]+"_"+date
+    
+    if not os.path.exists(dirPath):
+        os.makedirs(dirPath)
+        
+    pref = dirPath+"/"+sys.argv[2]
 
     regul_num = 0
     regul_bp = 0
@@ -44,7 +51,7 @@ def read_data():
     repeat_bp = 0
 
     print "create output files\n"
-    print "outfile prefix: "+pref+"\n"
+    print "outfiles location: "+pref+"\n"
     stat = pref+"_RE_stats.report"
     rep = pref+"_roadmap_data.report"
     regul = pref+"_regul_1-2-3-6-7.bed"
@@ -90,7 +97,7 @@ def read_data():
             outf.write("\nTotal bp :"+str(tx_bp))
             outf.write("\n\nQuiescent regions\nNumber of sites :"+str(quies_num))
             outf.write("\nTotal bp :"+str(quies_bp))
-            outf.write("Total genome bp: "+str(tot_bp))
+            outf.write("\n\nTotal genome bp: "+str(tot_bp))
         outf.close()
 
 if __name__=="__main__":
