@@ -2,6 +2,12 @@
 *.bed
 *.report
 *.txt
+*.tsv
+
+# Project-specific #
+####################
+*_vs_E*
+
 
 # OS generated files #
 ######################
