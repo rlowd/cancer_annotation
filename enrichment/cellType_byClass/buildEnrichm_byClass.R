@@ -3,6 +3,7 @@
 ##
 ## Rebecca Lowdon | 6-27 Oct 2015
 ## Code for plotting frequency and enrichment plots of GWAS cancer SNPs. 
+## This version uses heatmap.3 and plots col and row side colors.
 ##
 ######################################################################
 ######################################################################
@@ -13,107 +14,131 @@ library(reshape2)
 library(gplots)
 # args<-commandArgs(TRUE)
 
-#####
+##########
 ## Read in an assemble data into matrix m
 
-files <- paste("fl_in")  #args[1]
+files <- paste("fl_noENCODE_in")  #args[1]
 fl <- read.table(files,header=FALSE)
 
-d <- matrix( ncol = 5)
-colnames(d)<-c("EID","rs","regulatory","transcribed","silent")
+d <- matrix( ncol = 6)
+colnames(d)<-c("EID","rs","pubmedid","regulatory","transcribed","silent")
 
 for( i in 1:length(fl$V1) ){
-#for( i in 1:3 ){
   try(dat <- read.delim2(paste(fl$V1[i]),skip=1,header=FALSE),TRUE)
   try(dat$V12 <- c(i))
-  try(dat <- cbind(dat[,12],dat[,4],dat[,9:11]))
-  # try(dat <- select(dat, 12,4,9:11))
-  try(colnames(dat)<-c("EID","rs","regulatory","transcribed","silent"))
+  try(dat <- cbind(dat[,12],dat[,4],dat[,5],dat[,9:11]))
+  try(colnames(dat)<-c("EID","rs","pubmedid","regulatory","transcribed","silent"))
   try(d <- rbind(d, dat),TRUE)
 }  
 
 d <- filter(d, !is.na(d[,1]))       ## to remove the row of "NA" created when matrix initialized
-m <- melt(d,measure.vars = c(3,4,5))
-m <- cbind(m, as.numeric(m[,4]))    ## Make 0/1 a numeric value
-colnames(m) <- c("EID","rs","variable","value","VAL")
+m <- melt(d,measure.vars = c(4,5,6))
+m <- cbind(m, as.numeric(m[,5]))    ## Make 0/1 a numeric value
+colnames(m) <- c("EID","rs","pubmedid","variable","value","VAL")
+write.table(m, file="m_111_noENCODE.txt",quote=FALSE,sep = "\t",row.names = FALSE)
 
-#######
-## Row colors for RowSideColors arg
-
-rowcols = c(rep("#006666",1),rep("#00FFFF",8),rep("#0099FF",5),rep("#0000FF",9),
-            rep("#FF0000",14),rep("#FF00FF",9),rep("#6600FF",4),
-            rep("#99FF66",1),rep("#FFCC99",8),rep("#FFFF33",2),
-            rep("#FF9900",2),rep("#660066",10),rep("#990000",1),
-            rep("#FF6666",5),rep("#99CCFF",5),rep("#33FF33",4),
-            rep("#00CC00",12),rep("#009999",11),rep("#000000",16))
-
-#######
-## Build COUNTS tables and FREQUENCY heatmaps for each RE class
+##########
+## Build COUNTS tables for each RE class
 
 ## Regulatory class: read in, cast data to wide
 r <- filter(m, variable=="regulatory")
-rw <- dcast(r, rs ~ EID, value.var = "VAL")
-
-## lmat for no row side colors or legend:
-# lmat = rbind(c(0,3),c(2,1),c(0,4))
-# lhei = c(1,4,1.2)
-# lwid = c(1.5,4)
-# png("regFreq_allEID_unsorted.png")
-# heatmap.2(as.matrix(rw[,2:128]), dendrogram = "none", trace="none",
-#           Colv = FALSE, Rowv = FALSE, 
-#           col=c("lightgray","red"), lmat=lmat, lhei = lhei, lwid = lwid,
-#           main="Counts of GWAS SNPs in\nRegulatory elements by EID")
-# dev.off();
-
-## lmat for RowSideColors and legends on top right:
-lmat=rbind(c(0,0,4,0), c(0,0,1,0), c(0,3,2,0),c(0,0,5,0))
-lhei=c(1.5,0.5,5,1.5)
-lwid=c(1,1.5,4,2)
-
-png("regFreq_allEID_sorted.png")
-heatmap.2(as.matrix(rw[,2:128]), dendrogram = "both", trace="none",
-          ColSideColors = rowcols,
-          col=c("lightgray","red"), lmat=lmat, lhei = lhei, lwid = lwid,
-          main="Counts of GWAS SNPs in\nRegulatory elements by EID")
-dev.off();
+rw <- dcast(r, rs + pubmedid ~ EID, value.var = "VAL")
+write.table(rw, file = "rw_111_noENCODE.txt",quote=FALSE,sep = "\t",row.names = FALSE)
 
 ## Transcribed class
 t <- filter(m, variable=="transcribed")
-tw <- dcast(t, rs ~ EID, value.var = "VAL")
-
-# png("txFreq_allEID_unsorted.png")
-# heatmap.2(as.matrix(tw[,2:128]), dendrogram = "none", trace="none",
-#           Rowv = FALSE, Colv = FALSE,
-#           col=c("lightgray","green"), lmat=lmat, lhei = lhei, lwid = lwid,
-#           main="Counts of GWAS SNPs in\nTranscribed regions by EID")
-# dev.off();
-
-png("txFreq_allEID_sorted.png")
-heatmap.2(as.matrix(tw[,2:128]), dendrogram = "both", trace="none",
-          ColSideColors = rowcols,
-          col=c("lightgray","green"), lmat=lmat, lhei = lhei, lwid = lwid,
-          main="Counts of GWAS SNPs in\nTranscribed regions by EID")
-dev.off();
+tw <- dcast(t, rs + pubmedid ~ EID, value.var = "VAL")
 
 ## Silent class
 s <- filter(m, variable=="silent")
-sw <- dcast(s, rs ~ EID, value.var = "VAL")
+sw <- dcast(s, rs + pubmedid ~ EID, value.var = "VAL")
 
-# png("silFreq_allEID_unsorted.png")
-# heatmap.2(as.matrix(sw[,2:128]), dendrogram = "none", trace="none",
-#           Rowv = FALSE, Colv = FALSE,
-#           col=c("lightgray","darkblue"), lmat=lmat, lhei = lhei, lwid = lwid,
-#           main="Counts of GWAS SNPs in\nQuiescent regions by EID")
-# dev.off();
+##########
+## Colors for ColSideColors arg for CELL EIDs
+## First bulid custom palatte:
+pal <- c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00","#FFFF33",
+          "#A65628","#F781BF","#7FC97F","#BEAED4","#FDC086","#FFFF99",
+          "#1B9E77","#F0027F","#BF5B17","#666666","#000000","#33FF33")
 
-png("silFreq_allEID_sorted.png")
-heatmap.2(as.matrix(sw[,2:128]), dendrogram = "both", trace="none",
-          ColSideColors = rowcols,
-          col=c("lightgray","darkblue"), lmat=lmat, lhei = lhei, lwid = lwid,
-          main="Counts of GWAS SNPs in\nQuiescent regions by EID")
-dev.off();
+## Read in eid_group.txt and assign a color from topo.colors() to each cell group:
+cells <- read.delim2(file = "eid_noENCODE_group.txt", header=FALSE)
+un_cells <- data.frame(unique(cells$V2))
+un_cells$cols <- pal #terrian.colors(length(un_cells[,1]))   ## assign each trait a unique color
+colnames(un_cells) <- c("V2","cols")
 
-#####
+a <- right_join(cells,un_cells,by="V2")      ## use dplyr join to assign cell colors to EIDs
+a <- as.matrix(a[ order(a[,1]), ])
+cell_cols <- as.matrix(a[,3])
+
+##########
+## colors for RowSideColors arg -- PUBMEDID:
+## Read in pubmedid.txt and assign a color from rainbow() to each:
+ids <- read.delim2("pubmedids.txt",header=FALSE )
+ids$cols <- rainbow(length(ids$V1))
+
+## Create a matrix of colors for pubmedids:
+id_cols <- matrix( nrow = length(rw$pubmedid) )
+
+for( i in 1:length(rw$pubmedid)) {        ## iterating through the list of pumedids,
+    for( j in 1:length(ids$V2)) {         ## and through the id - color assignments,
+      if( rw$pubmedid[i]==ids$V2[j] ){    ## if the current pubmedid == the id in the ref table,
+        id_cols[i,1]  <- ids$cols[j]      ## assign that id's color to the id_cols vector
+      }
+    }
+}
+
+## colors for RowSideColors arg -- TRAITS:
+## Read in pmid_wPhenotype.txt and assign a color from topo.colors() to each:
+traits <- read.delim2(file = "pmid_wPhenotype.txt", header=FALSE)
+tcols <- topo.colors(93)                  ## there are 93 unique traits
+
+## Assign each trait a unique color:
+n=2
+for( i in 2:length(traits$V1)-1 ) {
+      j = i+1  
+      traits$col[1] <- tcols[1]
+      traits$col[2] <- tcols[2]
+      if( traits$V2[i] != traits$V2[j]) {
+            n=n+1
+            traits$col[j] <- tcols[n]
+          } else {
+            traits$col[j] <- tcols[n] 
+          }
+}
+
+## Create a matrix of colors for traits:
+tr_cols <- matrix( nrow = length(rw$pubmedid) )
+
+for( i in 1:length(rw$pubmedid)) {       ## iterating through the list of pumedids,
+  for( j in 1:length(traits$V1)) {       ## and through the traits - color assignments,
+    if( rw$pubmedid[i]==traits$V1[j] ){  ## if the current pubmedid == the id in the ref table,
+      tr_cols[i,1]  <- traits$col[j]     ## assign that trait's color to the traits_cols vector
+    }
+  }
+}
+
+rcolors <- as.matrix(t(cbind(id_cols,tr_cols)))   ## cbind, transform vector, and make into a matrix.
+rownames(rcolors) <- c("id_colors","trait_colors")
+
+
+##########
+## Plotting FREQUENCY heatmpas
+#Define custom dist and hclust functions for use with heatmaps
+mydist=function(c) {dist(c,method="euclidian")}
+myclust=function(c) {hclust(c,method="average")}
+
+heatmap.3(as.matrix(rw[,3:113]), dendrogram = "both", trace="none",
+          hclustfun = myclust, distfun = mydist,
+#          Colv = FALSE, 
+#          Rowv = FALSE, 
+         ColSideColors = cell_cols,
+         ColSideColorsSize = 2, RowSideColorsSize = 2,
+         RowSideColors = rcolors,
+         col=c("lightgray","red"), #lmat=lmat, lhei = lhei, lwid = lwid,
+         main="Counts of GWAS SNPs in\nRegulatory elements by EID")
+
+
+##########
 ## Import vector of RE space for EIDs and 
 ## build ENRICHMENT matrix and heatmap for each class
 
@@ -123,36 +148,27 @@ tx_f <- paste("../../chromHMM_REspace/cellType_byClass/allEID/vector/allEID_tran
 tx_vect <- t(read.delim(tx_f,header=F))
 s_f <- paste("../../chromHMM_REspace/cellType_byClass/allEID/vector/allEID_quies_repeat.vect")
 s_vect <- t(read.delim(s_f,header=F))
-vects <- rbind(reg_vect,tx_vect,s_vect)
+vects <- rbind(reg_vect[1:111],tx_vect[1:111],s_vect[1:111])
 
-reg_sum <- colSums(rw[,2:128])
-tx_sum <- colSums(tw[,2:128])
-s_sum <- colSums(sw[,2:128])
+reg_sum <- colSums(rw[,3:113])
+tx_sum <- colSums(tw[,3:113])
+s_sum <- colSums(sw[,3:113])
 sums <- rbind(reg_sum,tx_sum,s_sum)
 
 mat <- (sums/vects)/( 1016 /3095691400)
 
-## lmat without rowsidecols
-# lmat = rbind(c(0,3),c(2,1),c(0,4))
-# lhei = c(1,4,1.2)
-# lwid = c(1.5,4)
-
 col = c("darkgray","white","lightyellow","yellow","gold","orange","red","darkred")
 
-lmat=rbind(c(0,0,0,4,0), c(0,3,1,2,0),c(0,0,0,5,0))
-lhei=c(1,5,1)
-lwid=c(.5,1,0.3,5,2)
+heatmap.3(mat, dendrogram = "column", trace="none",
+          hclustfun = myclust, distfun = mydist,
+          #Colv = FALSE, 
+          Rowv = FALSE, 
+          ColSideColors = cell_cols, ColSideColorsSize = 2, 
+          col=col, 
+          labRow = c("R","T","S"), labCol = c(""),
+          main="Enrichment of GWAS SNPs in each element class by EID")
 
-png("enrichm_allEID.png")
-heatmap.2(t(mat), cexCol = 1, dendrogram = "both", trace="none",
-               lmat=lmat, lhei = lhei, lwid = lwid, 
-               col=col, 
-               breaks=c(0,0.9,1.1,1.5,1.75,2,2.25,2.75,3),
-               RowSideColors = rowcols,
-               main="  Enrichment of cancer-related GWAS SNPs\nin Regulatory element classes by EID")
-dev.off();
-
-#####
+##########
 ## EID colors legend
 
 leg_text <- c("IMR90", "ESC", "iPSC","ES-derived",
@@ -160,16 +176,16 @@ leg_text <- c("IMR90", "ESC", "iPSC","ES-derived",
               "Myosat","Epithelial","Neuropsh",
               "Thymus","Brain","Adipose",
               "Muscle","Heart","Smooth Muscle",
-              "Digestive","Other","ENCODE")   # category labels
-leg_col <- c("#006666", "#00FFFF", "#0099FF","#0000FF",
-             "#FF0000","#FF00FF","#6600FF",
-             "#99FF66","#FFCC99","#FFFF33",
-             "#FF9900","#660066","#990000",
-             "#FF6666","#99CCFF","#33FF33",
-             "#00CC00","#009999","#000000")    # color key
+              "Digestive","Other")   # category labels
+leg_col <- c("#4DAF4A", "#E41A1C", "#984EA3","#377EB8",
+             "#F781BF","#A65628","#FF7F00",
+             "#7FC97F","#FFFF33","#BEAED4",
+             "#33FF33","#F0027F","#FDC086",
+             "#000000","#FFFF99","#666666",
+             "#BF5B17","#F0027F")    # color key
 
 par(lend = 1)              # square line ends for the color legend
-legend("topright",         # location of the legend on the heatmap plot
+legend("center",         # location of the legend on the heatmap plot
        legend = leg_text,
        col = leg_col,
        lty= 1,             # line style

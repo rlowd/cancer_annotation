@@ -3,11 +3,16 @@
 *.report
 *.txt
 *.tsv
+*.png
+*.pdf
 
 # Project-specific #
 ####################
 *_vs_E*
-
+*met
+*_ids
+*_elements*
+*_in
 
 # OS generated files #
 ######################

@@ -1,6 +1,19 @@
+################
+## 
+## Rebecca L | Modified 29 Oct 2015
+##
+## Code to clean GWAS data
+## Usage: /apps/bin/Rscript cleanGwas.R 
+##
+################
+
 library(dplyr)
 
-gwas <- read.delim2("gwas_catalog_v1.0-downloaded_2015-08-18.tsv",header=TRUE)
+classes <- c( "NULL","integer",rep("NULL",5),"factor",rep("NULL",3),"integer","integer",rep("NULL",8),
+             "factor",rep("NULL",2),"factor","integer",
+             rep("NULL",2),"factor",rep("NULL",5) )
+
+gwas <- read.delim2("gwas_catalog_v1.0-downloaded_2015-08-18.tsv",header=TRUE, colClasses = classes)
 
 #####
 ## Clean data
@@ -82,7 +95,7 @@ tidy <- tidyDat(clean)
 ## Output files will be date-stamped
 
 date <- Sys.Date()
-format(today, format="%Y%m%d")
+# format(date, format="%Y-%m-%d")
 
 t <- paste("tidyGWAS_",date,".bed", sep="")
 c <- paste("chrGWAS_",date,".bed", sep="")

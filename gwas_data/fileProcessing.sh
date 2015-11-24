@@ -40,6 +40,6 @@ liftOver -bedPlus=5 $out hg38ToHg19.over.chain.gz $hg19 unmapped.$d
 echo "liftOver -bedPlus=5 $out hg38ToHg19.over.chain.gz $hg19 unmapped.$d"
 
 ## Then remove fields 9+
-mv $hg19 tmp
-cut -f 1-8 tmp > $hg19
+#mv $hg19 tmp
+#cut -f 1-9 tmp > $hg19
 unlink tmp
