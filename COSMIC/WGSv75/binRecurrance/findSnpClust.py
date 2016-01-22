@@ -5,8 +5,8 @@ import sys,os
 import numpy as np
 
 
-if len(sys.argv) != 2:
-    print '''usage: {0} <SNP file>  \n\n'''.format(sys.argv[0])
+if len(sys.argv) != 3:
+    print '''usage: {0} <SNP file> <binsize>  \n\n'''.format(sys.argv[0])
     
 
 def split_bins():
@@ -23,37 +23,63 @@ def split_bins():
             
             l = d[i].split("\t")
             ch,st = l[0],l[1]
-            print "i: "+str(i)+"\tst: "+st
+#            print "i: "+str(i)+"\tst: "+st
             
             chr_max = sizes[ch]
-            count = get_bin( i,ch,st,chr_max,d )
+            count,bin_end = get_bin( i,ch,st,chr_max,d )
                        
-            print "returned count: "+str(count)+"\n"
+#            print "returned count: "+str(count)+"\n"
+            print ch+"\t"+st+"\t"+str(bin_end)+"\t"+str(count)
             
     inf.close()
 
 
 def get_bin( i,ch,st,chr_max,d ):
+
     snp_count = 0
+    binsize = int(sys.argv[2])
+    bin_end = int(st) + binsize
     
-    
-    for n in range(1,6):
-        cur_st = int(d[(i+n)].split("\t")[1])
-        cur_ch = d[(i+n)].split("\t")[0]
-        bin_end = int(st) + 200
-        
-        if bin_end > (chr_max - 199):
-            bin_end = chr_max
-        
-        print "cur_chr: "+cur_ch+"\tcur_st: "+str(cur_st)+"\tbin end: "+str(bin_end)
-        
-        print cur_st < bin_end
-        
-        if  cur_st < int(st)+200 and cur_ch == ch:
-            snp_count+=1
-            print "snp count: "+str(snp_count)
+    if len(d)-binsize > i:
+        for n in range(0,binsize-1):
+            cur_st = int(d[(i+n)].split("\t")[1])
+            cur_ch = d[(i+n)].split("\t")[0]
             
-    return snp_count
+        
+            if bin_end > (chr_max - (binsize-1)):
+                bin_end = chr_max
+        
+#            print "cur_chr: "+cur_ch+"\tcur_st: "+str(cur_st)+"\tbin end: "+str(bin_end)
+#            print cur_st < bin_end
+        
+            if cur_ch == ch and cur_st < (int(st)+binsize):
+                snp_count+=1
+#                print "snp count: "+str(snp_count)
+
+            if cur_ch != ch:
+                continue
+    
+    else:
+        z = len(d)-i
+        for n in range(0,z):
+            cur_st = int(d[(i+n)].split("\t")[1])
+            cur_ch = d[(i+n)].split("\t")[0]
+#            bin_end = int(st) + 500
+        
+            if bin_end > (chr_max - (binsize-1)):
+                bin_end = chr_max
+        
+#            print "cur_chr: "+cur_ch+"\tcur_st: "+str(cur_st)+"\tbin end: "+str(bin_end)
+#            print cur_st < bin_end
+        
+            if  cur_st < (int(st)+binsize) and cur_ch == ch:
+                snp_count+=1
+#                print "snp count: "+str(snp_count)
+            
+            if cur_ch != ch:
+                continue
+
+    return snp_count,bin_end
 
 
 def get_chr_sizes():
