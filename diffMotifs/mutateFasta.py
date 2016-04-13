@@ -13,6 +13,7 @@
 ################################
 ################################
 
+
 import sys,gzip,os
 import numpy as np
 from Bio import SeqIO
@@ -20,8 +21,26 @@ from Bio.Alphabet import IUPAC
 from Bio import motifs
 
 
+## The uniqAlleles file is formatted as:
+## col1 = position (chr:start-end)
+## col2 = WT allele
+## col3 = MUT allele
+##
+## NOTE: getNCVallele.sh is a wrapper script that creates this file from a 3 column bedfile
+## using grep on the gzipped NCV db to get the allele information.
+
+
 if len(sys.argv) != 2:
     print '''usage: {0} <uniqAlleles file>  \n\n'''.format(sys.argv[0])
+
+
+## This function takes the input and parses it to get the chr,start,end data,
+## plus the WT and MUT alleles. IDs for each unique position-allele set is formatted as follows:
+## <position|WT|MUT>. This information is written to the "alleles" file and
+## will become the ID for the FASTA sequence (alleles variable) in the next function.
+## Then write the position +/-20bp as a 1 line bedfile. Use this bedfile and
+## system.os() to call fastaFromBed commandline tool. 
+## Finally, the ID and its FASTA sequence are pasted together appended ot the <fasta> tmp file.
 
 
 def make_fasta():
@@ -67,6 +86,14 @@ def make_fasta():
     inf.close()
 
 
+## Take the <fasta> file and for each header line, split on tabs and
+## save the second element (as "newl"). newl = the position|WT|MUT allele
+## tag created in make_fasta(). This tag becomes the new header.
+## How you get to this point doesn't really matter -- but having the 
+## allele information you want to mutate to in the header line is the important
+## part for the make_seq() function to work.
+
+
 def reformat():
     infile = "fasta"
 #    with open( infile,"r" ) as inf, open( "new","w" ) as newf:
@@ -84,10 +111,21 @@ def reformat():
     os.system( cmd3 )
 
 
+## make_seqs() is the meat of this script. This function uses Biopython to create an
+## index dict of the fastaWithAlleles file where keys are the header lines and 
+## values are the sequence.
+## Use the method mutable_seq() to change a seq_record to a data type that can be mutated.
+## (To preserve integrity, you can't mutate most seq items in Biopython. You have to
+## make it a specific mutable object.)
+## Once the mutable_seq is made, use it to create the WT and MUT alleles, as needed.
+## I also count how many times the WT allele matches the ref and/or the MUT, for my records.
+## Finally, the mutated seq (WT or MUT) are associated with thier ID and added to either
+## the WT or MUT dictionaries. These dicts are passed to the next function, find_motifs().
+
+
 def make_seqs():    
     ## First make a dict of the seq_records
     index_dict = SeqIO.index("fastaWithAlleles","fasta",alphabet=IUPAC.unambiguous_dna)
-#    index_dict = SeqIO.index("new","fasta",alphabet=IUPAC.unambiguous_dna)
 
     agree = 0
     disagree = 0
@@ -97,9 +135,7 @@ def make_seqs():
     MUTdict = {}
     
     for k in index_dict.keys():
-        
-#        print k+"\t"+index_dict[k]+"\n"
-        
+               
         cur_seq_record = index_dict[k]
         mutable_seq = index_dict[k].seq.tomutable()
         
@@ -109,12 +145,10 @@ def make_seqs():
         
         ## Change seq to mutable_seq and get WT and MUT alleles
         ## Check to see if patient WT allele matches reference allele        
-#        print WT+"\t"+MUT+"\t"+ref
         
         ## How often does the ref == WT?
         ## If TRUE, print ref allele to patientWT.fa
         ## and print MUT alleles to patientMUT.fa
-#        print "ref equals WT? "+str( ref.upper() == WT )
         if( ref.upper() == WT ):
             agree += 1
             
@@ -124,20 +158,12 @@ def make_seqs():
             MUTdict[new_seq.id] = new_seq
             
             WTdict[cur_seq_record.id] = cur_seq_record.seq
-            
-#            print "ref == WT+\n"
-#            print "original: "+cur_seq_record.id+"\t"+cur_seq_record.seq
-#            print "new MUT: "+new_seq.id+"\t"+MUTdict[new_seq.id]+"\n"
-        
+              
         ## How often does the REF == MUT?
-#        print "ref equals MUT? "+str( ref.upper() == MUT )
         if( ref.upper() == MUT ):
             disagree += 1
-            
-#            print "disagree\n"
-        
+                  
         # How often are all three alleles different?
-#        print "all three different? "+str( ref.upper() != MUT and ref.upper() !=WT )
         if( ref.upper() != MUT and ref.upper() !=WT ):
             exclusive += 1
             
@@ -145,25 +171,29 @@ def make_seqs():
             new_seq = mutable_seq.toseq()
             new_seq.id = cur_seq_record.id
             WTdict[new_seq.id] = new_seq
-            
-#            print "ref != WT != MUT+\n"
-#            print "original: "+cur_seq_record.id+"\t"+cur_seq_record.seq
-#            print "new WT: "+new_seq.id+"\t"+WTdict[new_seq.id]+"\n"
-            
+                       
             mutable_seq[20]=MUT
             new_seq = mutable_seq.toseq()
             new_seq.id = cur_seq_record.id
             MUTdict[new_seq.id] = new_seq
 
-#            print "new MUT: "+new_seq.id+"\t"+MUTdict[new_seq.id]+"\n"
 
-#        return WTdict,MUTdict
     print "agree: "+str(agree)+"\tdisagree: "+str(disagree)+"\texclusive: "+str(exclusive)
-#    print "Num entries in MUT dict: "+str(len(MUTdict))+"\n"
-#    print "Num enteries in WT dict: "+str(len(WTdict))+"\n"
-    
     
     find_motifs( WTdict,MUTdict )
+
+
+## find_motifs() will actually do the motif scanning.
+## First, build_motif_db() method is called (see below) which creates a 
+## dict where the key = motif name and value = an array where the first element
+## is the PSSM for that motif and the second element is the score threshold.
+## For each key in motif_dict, save the PSSM, threshold, and PSSM for the reverse complement.
+## Then for each FASTA in the WT dict (which is paried with a FASTA of the SAME KEY in the
+## MUT dict), use the calculate() method from Biopython to find the PSSM score for 
+## _each start position_ for that sequence on both alleles, on both strands.
+## Then determine the delta value.
+## Based on these values, write values to the outfile depending on criteria expressed
+## in the if statement on line 223.
 
 
 def find_motifs( WT,MUT ):
@@ -173,44 +203,31 @@ def find_motifs( WT,MUT ):
     motif_dict = build_motif_db()
     
     for mk in motif_dict.keys():
-#        print mk+"\n"+str(motif_dict[mk])+"\n"
         PSSM = motif_dict[mk][0]
         threshold = motif_dict[mk][1]
         RPSSM = PSSM.reverse_complement()
     
         for k in WT.keys():
-#            print k+"\tWT: "+WT[k]+"\tMUT: "+MUT[k]
             
             WT_fwd_lo = PSSM.calculate( WT[k] )
             WT_rev_lo = RPSSM.calculate( WT[k] )
-            
-#            print "\nWT_fwd_lo:\n"
-#            print WT_fwd_lo
-#            print "\nWT_rev_lo:\n"
-#            print WT_rev_lo
-        
+
             MUT_fwd_lo = PSSM.calculate( MUT[k] )
             MUT_rev_lo = RPSSM.calculate( MUT[k] )
             
-#            print "\nMUT_fwd_lo:\n"
-#            print MUT_fwd_lo
-#            print "\nMUT_rev_lo:\n"
-#            print MUT_rev_lo
-            
             delta_fwd_lo = MUT_fwd_lo - WT_fwd_lo
             delta_rev_lo = MUT_rev_lo - WT_rev_lo
-            
-#            print "\ndelta_fwd_lo:\n"
-#            print delta_fwd_lo
-#            print "\ndelta_rev_lo:\n"
-#            print delta_rev_lo
-            
-            with open( "motifLO_byPosition.txt","a" ) as outf:
+                       
+            with open( "test-out.txt","a" ) as outf:
                 for i in range(0,len(WT_fwd_lo)):
                     if( (WT_fwd_lo[i] > threshold or MUT_fwd_lo[i] > threshold or WT_rev_lo[i] > threshold or MUT_rev_lo[i] > threshold) and (delta_fwd_lo[i] != 0.0 or delta_rev_lo[i] != 0.0) ):
                         outf.write( "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (k,mk,i,WT_fwd_lo[i], MUT_fwd_lo[i],delta_fwd_lo[i], WT_rev_lo[i], MUT_rev_lo[i],delta_rev_lo[i],threshold) )
             outf.close()
             
+
+## Function to bulid the motif_dict needed in the find_motifs() function.
+## <jaspar_curated.pfm> file is the JASPAR vertbrates motif file that I have
+## curated to include only motifs of interst (currently 99).
 
 
 def build_motif_db():
