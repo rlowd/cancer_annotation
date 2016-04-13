@@ -60,7 +60,7 @@ def read_data():
         dat = gzip.open( f.rstrip("\n"),"r" ).readlines()
         print "opening "+f+" ...\n"
                
-        cellName = f.split("/")[2].split(".")[0]
+        cellName = f.split("/")[9].split(".")[0]   ## was [2] -- [9] for running w/ canAnn.sh
         bed_dir = dirPath+"/bedfile/"
         pref = bed_dir+cellName
         
