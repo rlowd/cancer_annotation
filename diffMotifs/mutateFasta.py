@@ -8,7 +8,8 @@
 ## Purpose: 
 ##
 ##
-## Usage: python filterNCV.py <uniqAlleles file> 
+## Usage: python filterNCV.py <uniqAlleles file>  
+## Test case: python mutateFasta.py test_dir/test1
 ##
 ################################
 ################################
@@ -31,8 +32,25 @@ from Bio import motifs
 
 
 if len(sys.argv) != 2:
-    print '''usage: {0} <uniqAlleles file>  \n\n'''.format(sys.argv[0])
+    print '''usage: {0} <uniqAlleles file>\n\n'''.format(sys.argv[0])
 
+
+if len(sys.argv) != 3:
+    print '''usage: {0} <file list> <output prefix> <bedfiles output dir>\n\n'''.format(sys.argv[0])
+
+def start(X):
+    try:
+        print 'opening file :',X
+        infile = open(X,"r").readlines()
+        print 'Total ',len(infile),' lines.'
+        return infile
+    except IOError,message:
+        print >> sys.stderr, "cannot open file",message
+        sys.exit(1)
+        
+        
+Ef = start(sys.argv[1])
+    for f in Ef:
 
 ## This function takes the input and parses it to get the chr,start,end data,
 ## plus the WT and MUT alleles. IDs for each unique position-allele set is formatted as follows:
@@ -54,6 +72,8 @@ def make_fasta():
             ch = l[0].split(":")[0]
             bases = l[0].split(":")[1]
             st,end = ( bases.split("-")[0],bases.split("-")[1] )
+#            st = bases.split("-")[0]  # for positive controls
+#            end = str(int(st) + 1)    # for positive controls
             
             ## Get alleles information and print to alleles file
             wt,mut = l[1],l[2].rstrip("\n")
@@ -71,9 +91,13 @@ def make_fasta():
                 bedf.write( bedline+"\n" )
             bedf.close()
             
-            ## fastaFromBed should be hg38!!!
+            ## fastaFromBed should be hg38!!! (hg19 for pos controls)
             cmd1 = "fastaFromBed -fi /bar/genomes/hg38/hg38.fa -bed inbed -fo out"
             os.system( cmd1 )
+            
+            ## fasta should be hg19 for pos controls
+#            cmd1 = "fastaFromBed -fi hg19.fa -bed inbed -fo out"
+#            os.system( cmd1 )
             
             ## Put the alleles together with its fasta seq
             ## "fasta" file is what will be used to make mutated seqs
@@ -98,6 +122,7 @@ def reformat():
     infile = "fasta"
 #    with open( infile,"r" ) as inf, open( "new","w" ) as newf:
     with open( infile,"r" ) as inf, open( "fastaWithAlleles","w" ) as newf:
+#    with open( infile,"r" ) as inf, open( "posCntrl_fastaWithAlleles","w" ) as newf:
         for line in inf:
             if line.startswith( ">" ):
                 l = line.split("\t")
@@ -107,8 +132,8 @@ def reformat():
                 newf.write( line )
     inf.close()
     
-    cmd3 = "rm fasta"
-    os.system( cmd3 )
+#    cmd3 = "rm fasta"
+#    os.system( cmd3 )
 
 
 ## make_seqs() is the meat of this script. This function uses Biopython to create an
@@ -147,8 +172,8 @@ def make_seqs():
         ## Check to see if patient WT allele matches reference allele        
         
         ## How often does the ref == WT?
-        ## If TRUE, print ref allele to patientWT.fa
-        ## and print MUT alleles to patientMUT.fa
+        ## If TRUE, save the current seq and key to WTdict as is, 
+        ## and mutate the MUT allele, save to MUTdict
         if( ref.upper() == WT ):
             agree += 1
             
@@ -218,9 +243,10 @@ def find_motifs( WT,MUT ):
             delta_fwd_lo = MUT_fwd_lo - WT_fwd_lo
             delta_rev_lo = MUT_rev_lo - WT_rev_lo
                        
-            with open( "test-out.txt","a" ) as outf:
+            outfile = sys.argv[1]+".fpr001.motifsFound.tsv"
+            with open( outfile,"a" ) as outf:
                 for i in range(0,len(WT_fwd_lo)):
-                    if( (WT_fwd_lo[i] > threshold or MUT_fwd_lo[i] > threshold or WT_rev_lo[i] > threshold or MUT_rev_lo[i] > threshold) and (delta_fwd_lo[i] != 0.0 or delta_rev_lo[i] != 0.0) ):
+                    if( ((WT_fwd_lo[i] > threshold or MUT_fwd_lo[i] > threshold) and delta_fwd_lo[i] != 0.0) or ((WT_rev_lo[i] > threshold or MUT_rev_lo[i] > threshold) and delta_rev_lo[i] != 0.0) ):
                         outf.write( "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (k,mk,i,WT_fwd_lo[i], MUT_fwd_lo[i],delta_fwd_lo[i], WT_rev_lo[i], MUT_rev_lo[i],delta_rev_lo[i],threshold) )
             outf.close()
             
@@ -233,12 +259,12 @@ def find_motifs( WT,MUT ):
 def build_motif_db():
     motif_dict= {}
     background = {'A': 0.3, 'C': 0.2, 'T': 0.3, 'G': 0.2}
+#    jf = open("jaspar_sample")
     jf = open("jaspar_curated.pfm")
     for m in motifs.parse(jf,"jaspar"):
         pwm = m.counts.normalize(pseudocounts={'A': 0.6, 'C': 0.4, 'T': 0.6, 'G': 0.4})
         pssm = pwm.log_odds(background)
         distribution = pssm.distribution(background=background, precision = 10**3)
-#        threshold = distribution.threshold_patser()
         threshold = distribution.threshold_fpr(0.001)
         motif_dict[m.name] = (pssm,threshold)
     return motif_dict
