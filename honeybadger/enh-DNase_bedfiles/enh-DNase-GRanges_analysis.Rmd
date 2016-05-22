@@ -1,0 +1,167 @@
+---
+title: "Enhancer-DNase element analysis"
+author: "Rebecca Lowdon"
+date: "April 11, 2016"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    highlight: zenburn
+    theme: cosmo
+---
+
+```{r message=FALSE}
+setwd("/bar/rlowdon/cancer_annotation/honeybadger/enh-DNase_bedfiles/")
+library(GenomicRanges)
+library(data.table)
+```
+
+# Format NCVs to analyze
+Load bedfile of liver WGS-NCVs and ExomeSeq-NCVs. Create GenomicRanges object for each NCV set:
+
+```{r message=FALSE}
+wgsncvs <- read.table("liver_keep_L3-WGS_hg19.bed",header = F)  ## construct GenomicRanges object from bedfile as here: http://davetang.org/muse/2013/01/02/iranges-and-genomicranges/
+colnames(wgsncvs) <- c("chr","start","end","CosmID","sampleID","popVar","FATHMMscore")
+wgsncvs_gr <- with(wgsncvs, GRanges(chr, IRanges(start+1,end),strand="*", id=CosmID, sampleID))
+
+exncvs <- read.table("liver_keep_L3-ExomeSeq_hg19.bed",header = F)
+colnames(exncvs) <- c("chr","start","end","CosmID","sampleID","popVar","FATHMMscore")
+exncvs_gr <- with(exncvs, GRanges(chr, IRanges(start+1,end),strand="*", id=CosmID, sampleID))
+```
+
+Functions for tabulating overlap of NCVs and background using GenoimcRanges.
+
+```{r warning=FALSE}
+clusters <- read.table("enh-clusters",header = F)
+
+make_clust_gr <- function(x){
+  cur_clust <- read.table(as.character(x),header=F)
+  # cur_clust <- read.table(as.character(clusters$V1[1]),header=F)
+  colnames(cur_clust) <- c("chr","start","end","V4","V5","V6")
+  clust_gr <- with(cur_clust, GRanges(chr, IRanges(start+1,end),strand="*"))
+  return(matrix(c( length(clust_gr), sum(width(clust_gr)) ) ))
+}
+
+findSnpOverlap <- function(x,ncvGR){
+  cur_clust <- read.table(as.character(x),header=F)
+  # cur_clust <- read.table(as.character(clusters$V1[1]),header=F) # test case
+  colnames(cur_clust) <- c("chr","start","end","V4","V5","V6")
+  clust_gr <- with(cur_clust, GRanges(chr, IRanges(start+1,end),strand="*"))
+  return( length(subsetByOverlaps(clust_gr,ncvGR)) )
+}
+```
+
+Now tabulate overlaps and background for each NCV set using functions and lapply.
+
+```{r warning=FALSE}
+## Regions/lengths of regions in each cluster are the same for each NCV state
+regions_in_clust <- lapply(clusters$V1,FUN = make_clust_gr)
+
+## First tabulate for WGS-NCVs
+numOverlap <- lapply(clusters$V1,FUN=findSnpOverlap,ncvGR = wgsncvs_gr )   # supplying arumgnet to FUN in lapply: http://stackoverflow.com/questions/12792896/passing-arguments-to-iterated-function-through-apply
+DT.wgs <- data.table( cluster=seq(1:226) , t(matrix(unlist(regions_in_clust),ncol = 226)) , t(matrix(unlist(numOverlap),ncol = 226)) )
+colnames(DT.wgs) <- c("cluster","numRegionsInClust","widthBpInClust","numOverlap")
+
+## Tabulate for exome-seq NCVs
+numOverlap <- lapply(clusters$V1,FUN=findSnpOverlap,ncvGR = exncvs_gr )   
+DT.ex <- data.table( cluster=seq(1:226) , t(matrix(unlist(regions_in_clust),ncol = 226)) , t(matrix(unlist(numOverlap),ncol = 226)) )
+colnames(DT.ex) <- c("cluster","numRegionsInClust","widthBpInClust","numOverlap")
+```
+
+
+#Determine overlap in CT vs restricted clusters.
+First assemble `cluster_order` data.frame that list that CT shared/restricted status for each cluster:
+
+```{r}
+cluster_order <- read.table("cluster_ordering.txt",head=F)
+cluster_order <- cbind(cluster_order, c(rep("shared",4),rep("restricted",222)))
+colnames(cluster_order) <- c("cluster","CTstate")
+```
+
+Now ready for analysis.
+
+```{r  message=FALSE}
+library(dplyr)
+
+run_fisher_test <- function(x){
+  dt <- left_join(cluster_order, x ,by="cluster")
+  dt <- left_join(cluster_order, DT.wgs ,by="cluster")  ## test case
+  dat <- group_by(dt, CTstate) %>% summarise(., obs=sum(numOverlap), bkgd=sum(widthBpInClust))
+  mat <- as.matrix(cbind( rev(dat$obs),rev(dat$bkgd)) )  ## rev() so that 'a' = CT shared and 'b' = CT restricted 
+  dat
+  return( fisher.test(mat, alternative = "two.sided") )
+}
+
+## Run for each NCV set.
+run_fisher_test(DT.wgs)
+run_fisher_test(DT.ex)
+```
+
+* P-value for Fisher's test is not quite significant for WGS-NCVs (0.0556), but it is very significant for ExomeSeq-NCVs (2.875e-15). 
+* Conclude that WGS-NCVs that fall in promoter-DNase regions are significantly more likely to fall in CT shared promoters than CT restricted promoter regions.
+
+# Graph all results
+
+```{r}
+library(ggplot2)
+
+m <- data.frame(rbind(c(0.176,0.167,0.239),c(0.824,0.833,0.761),c(0.079,0.107,0.101),c(0.921,0.893,0.899),
+                      c(0.547,0.360,0.239),c(0.736,0.640,0.761),c(0.072,0.075,0.101),c(0.982,0.925,0.899)))
+
+m <- cbind(m,c(rep("keep",4),rep("remove",4)), c(rep("promoter",2),rep("enhancer",2)) , c("shared","restricted") )
+colnames(m) <- c("HCC WGS-NCVs","HCC ExomeSeq-NCVs","All DNase regions","filter","DNase","status")
+
+m$status <- factor(m$status, levels=c("shared","restricted"))
+
+mm <- melt(m)
+mm
+g <- ggplot(mm, aes(x=status, y=value, fill=variable)) + geom_bar(stat="identity", position = "dodge") + facet_wrap(~DNase, nrow = 2)
+
+g <- g + ylab("Fraction occupied") + xlab("") + guides(fill=guide_legend(title=NULL)) + theme(legend.position="bottom") +
+  theme(axis.title.x=element_blank(),axis.text.x=element_text(size=20),
+        axis.title.y=element_text(size=20),axis.text.y=element_text(size=20),
+        legend.title=element_text(size=20),legend.text=element_text(size=14),
+        strip.text.x=element_text(size=20))
+
+png("CellTypeDNaseRegionDistribution.png",width = 400,height = 600)
+g
+dev.off();
+```
+
+
+```{r}
+
+dt <- left_join(cluster_order, DT.wgs ,by="cluster")  ## test case
+dat_wgs <- group_by(dt, CTstate) %>% summarise(., obs=sum(numOverlap), bkgd=sum(widthBpInClust))
+l <- length(wgsncvs$chr)
+genl <- 3.1*10^9
+dat_wgs <- mutate(dat_wgs, exptd = l*(bkgd/genl), fold = obs/exptd, set = "wgs") %>%
+  transmute(., CTstate, obs, bkgd, exptd, fold)
+
+mat <- as.matrix(cbind( rev(dat_wgs$obs),rev(dat_wgs$exptd)) ) 
+fisher.test(mat, alternative = "two.sided")
+
+dt <- left_join(cluster_order, DT.ex ,by="cluster")  ## test case
+dat_ex <- group_by(dt, CTstate) %>% summarise(., obs=sum(numOverlap), bkgd=sum(widthBpInClust))
+dat_ex <- mutate(dat_ex, obs_norm = obs/sum(obs), bkgd_norm = bkgd/sum(bkgd), set="exome") %>%
+  transmute(., CTstate, obs_norm, bkgd_norm,set)
+
+# Stacked bar plots
+d <- rbind(dat_ex,dat_wgs)
+m <- melt(d)
+
+g <- ggplot(m, aes(x=variable,y=value, fill=CTstate)) + geom_bar(stat="identity") + facet_wrap(~set)
+g <- g + xlab("") + scale_x_discrete(labels =  c("Observed","Background")) + 
+  ylab("Fraction of variants or bp in background\n") +
+  theme(axis.title.y=element_text(size=18),axis.text.y=element_text(size=18),
+        axis.text.x=element_text(size=18),strip.text.x=element_text(size=18),
+        legend.text=element_text(size=18),legend.title=element_text(size=18),
+        legend.position="bottom") +
+  scale_fill_discrete(name="State space", labels=c("Cell type restricted","Cell type shared"))
+
+png("enhancer_DNase_obs_6May2016.png")
+g
+dev.off();
+
+```
+

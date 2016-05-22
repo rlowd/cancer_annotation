@@ -35,22 +35,22 @@ if len(sys.argv) != 2:
     print '''usage: {0} <uniqAlleles file>\n\n'''.format(sys.argv[0])
 
 
-if len(sys.argv) != 3:
-    print '''usage: {0} <file list> <output prefix> <bedfiles output dir>\n\n'''.format(sys.argv[0])
-
-def start(X):
-    try:
-        print 'opening file :',X
-        infile = open(X,"r").readlines()
-        print 'Total ',len(infile),' lines.'
-        return infile
-    except IOError,message:
-        print >> sys.stderr, "cannot open file",message
-        sys.exit(1)
-        
-        
-Ef = start(sys.argv[1])
-    for f in Ef:
+#if len(sys.argv) != 3:
+#    print '''usage: {0} <file list> <output prefix> <bedfiles output dir>\n\n'''.format(sys.argv[0])
+#
+#def start(X):
+#    try:
+#        print 'opening file :',X
+#        infile = open(X,"r").readlines()
+#        print 'Total ',len(infile),' lines.'
+#        return infile
+#    except IOError,message:
+#        print >> sys.stderr, "cannot open file",message
+#        sys.exit(1)
+#        
+#        
+#Ef = start(sys.argv[1])
+#    for f in Ef:
 
 ## This function takes the input and parses it to get the chr,start,end data,
 ## plus the WT and MUT alleles. IDs for each unique position-allele set is formatted as follows:

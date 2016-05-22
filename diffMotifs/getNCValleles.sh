@@ -7,18 +7,16 @@
 ## Print to outfile that will be used in python script
 ## for creating reference and mutated FASTA sequences.
 
-#ln -s ~/cancer_annotation/enrichment/union_byChromHMM-18/allEIDs_14_TssBiv.bed_uniq .
-#ln -s ~/cancer_annotation/enrichment/union_byChromHMM-18/allEIDs_1_TssA.bed_uniq .
-#ln -s ~/cancer_annotation/enrichment/union_byChromHMM-18/RM78-EIDs_ExSeq* .
+# ln -s ~/cancer_annotation/enrichment/union_byChromHMM-18/RM*WGS* .
 #
-#f="RM78-EIDs_ExSeq_1_TssA.bed_uniq"
+# f="RM78-EIDs_ExSeq_1_TssA.bed_uniq"
 
 
 ## For loop to iterate over each file -- get alleles
 
 #ls RM78-EIDs_ExSeq* > rmlist
 
-#for f in `cat rmlist.4`;
+#for f in `cat rmlist`;
 #do
 #	echo $f
 #	liftOver $f ~/genomes/hg19/hg19ToHg38.over.chain.gz ${f}_hg38 unm
@@ -46,7 +44,7 @@
 
 ## Loop to run mutateFasta.py
 
-for f in `cat rmlist.4`;
+for f in `cat rmlist`;
 do
 	suff=".bed_uniq"
 	newdir=${f%$suff}
