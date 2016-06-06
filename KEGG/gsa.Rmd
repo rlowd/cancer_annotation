@@ -1,0 +1,89 @@
+---
+title: "Gene Set Annotation"
+author: "Rebecca Lowdon"
+date: "May 20, 2016"
+output: html_document
+---
+
+Gene set annotations for NCVs in ChromHMM-18 regulatory states (1,2,7,8,14,15).
+
+```{r}
+setwd("~/cancer_annotation/enrichment/union_byChromHMM-18/gene_set_annot")
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(dplyr)
+```
+
+* Read in SNV-containing REs-to-promoters list and KEGG patwhay gene list filenames.
+
+```{r, echo=FALSE}
+# Genes associated w/ ChromHMM18 regulatory state NCVs
+# Gene assignments made using GREAT
+gs <- read.table("GREAT-assocGenes_RM78-EIDs_allRegulStates_livWgsNcvs.txt",sep="\t",
+                 colClasses = c("factor","NULL"), skip = 1 )
+colnames(gs) <- c("SYMBOL")
+  head(gs)
+  
+# GSEA MDSig and KEGG pathway gene lists
+annot_gene_sets <- read.table("genesets",header=F)
+  head(annot_gene_sets)
+```
+
+* Function to calcuate and report overlap for each set.
+
+```{r}
+count_gene_set_overlap <- function( fl,x ){
+  
+  # test case:
+#   d <- read.table(as.character("geneset-95.txt"), skip = 2, col.names="SYMBOL") 
+#   pref <- read.table( as.character("geneset-95.txt"), nrows = 1)
+
+  tab <- matrix( nrow = length(annot_gene_sets$V1), ncol = 3)
+                     
+  for( i in 1:length(fl$V1)){
+    pref <- read.table( as.character(fl$V1[i]), nrows = 1)
+    name <- pref$V1[1]
+    d <- read.table( as.character(fl$V1[i]), skip = 2, col.names="SYMBOL")
+    overlap <- data.frame(unique(merge(x = gs, y = d, by = "SYMBOL")))
+    tab[i,1] <- paste(name)
+    tab[i,2] <- length(overlap$SYMBOL)
+    tab[i,3] <- length(d$SYMBOL)
+  }
+  return( tab )
+}
+
+df <- data.frame(count_gene_set_overlap( annot_gene_sets,gs ))
+colnames(df) <- c("Pathway","numNcvs","numGenes")
+  head(df)
+```
+
+
+```{r}
+labs <- read.delim("geneset_groups",header=F)
+colnames(labs) <- c("Pathway","set")
+  head(labs)
+
+library(ggplot2)
+
+df$Pathway <- factor(df$Pathway)
+df$numNcvs <- as.numeric(paste0(df$numNcvs))
+df$numGenes <- as.numeric(paste0(df$numGenes))
+  head(df)
+
+df_path <- dplyr::left_join(df, labs, by.x=Pathway)
+  head(df_path)
+
+g <- filter(df_path, set=="cb") %>%
+  ggplot(., aes(x=reorder(Pathway,numNcvs),y=numNcvs/numGenes,fill=set)) + geom_bar(stat = "identity", fill="yellow") + coord_flip()
+
+g <- g + ylab("Number regulatory NCVs / number total genes annotated in pathway") +
+  theme(axis.text.x=element_text(size=16), axis.title.x=element_text(size=16),
+        axis.text.y=element_text(size=16), axis.title.y=element_blank(),
+        legend.position="none")
+
+png("KEGG_metabolism_livWgsNcvs_normalized.png",width = 1000, height = 1200)
+g
+dev.off();
+
+```
+
