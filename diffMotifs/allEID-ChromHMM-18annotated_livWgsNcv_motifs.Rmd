@@ -1,0 +1,230 @@
+---
+title: "Liver WGS NCV mutated motifs analysis by ChromHMM-18 annotations"
+author: "Rebecca Lowdon"
+date: "April 20, 2016"
+output: 
+  html_document: 
+    fig_height: 7
+    highlight: haddock
+    theme: cosmo
+---
+
+# Experimental design
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+setwd("~/cancer_annotation/diffMotifs/")
+fl <- read.table("motif_results",header=F,sep = "\t")  ## file list
+```
+
+
+# Read in motif results by threshold
+Function to read in and assemble data:
+* <motif_results> file has list of selected motifs tsv output and name of the dataset
+* compiles all into a single data.frame
+
+
+```{r}
+# Function to read in each mutateFasta.py output and collate into a data.frame:
+read_motif_results <- function( x,y,DF ){
+  d <- read.table( as.character(x),header=FALSE )
+  # d <- read.table( as.character(fl$V1[1]),header=FALSE )   ## test case
+  d[,4:9] <- as.double(cbind(d[,4],d[,5],d[,6],d[,7],d[,8],d[,9]))
+  colnames(d) <- c("ID","TF","pos","WT_fwd_lo","MUT_fwd_lo","delta_fwd_lo",
+                 "WT_rev_lo","MUT_rev_lo","delta_rev_lo","threshold")
+  fwd <- cbind(d[,1:6],d[,10])
+  fwd$strand <- "fwd"
+  colnames(fwd) <- c("ID","TF","pos","WT_lo","MUT_lo","delta","threshold","strand")
+  rev <- cbind(d[,1:3],d[,7:10])
+  rev$strand <- "rev"
+  colnames(rev) <- c("ID","TF","pos","WT_lo","MUT_lo","delta","threshold","strand")
+  allDat <- rbind(fwd,rev)
+  # y = as.character(fl$V2[1])  ## test case
+  allDat$set <- paste(y)
+  return(data.frame(allDat))
+}
+
+# Run function for all sets and compile:
+df1 <- read_motif_results( fl$V1[1],fl$V2[1] )
+df2 <- read_motif_results( fl$V1[2],fl$V2[2] )
+df3 <- read_motif_results( fl$V1[3],fl$V2[3] )
+df4 <- read_motif_results( fl$V1[4],fl$V2[4] )
+df5 <- read_motif_results( fl$V1[5],fl$V2[5] )
+df6 <- read_motif_results( fl$V1[6],fl$V2[6] )
+df7 <- read_motif_results( fl$V1[7],fl$V2[7] )
+df8 <- read_motif_results( fl$V1[8],fl$V2[8] )
+
+allResults <- rbind(df1,df2,df3,df4,df5,df6,df7,df8)
+rm(df1,df2,df3,df4,df5,df6,df7,df8)
+```
+
+
+# Find GOB/LOBs
+* Display results from `mutateFasta.py` script, gain-of-binding and loss-of-binding separately. 
+* mutateFasta.py calculates the PSSM score (on both strands) for both the patient WT and mutant alleles for each NCV over a set of TF PWMs. Then it calulates the `delta` value as `MUT PSSM log odds = WT PSSM log odds`. 
+* Results are returned *only* if one of the alleles has a score that passes the **threshold**.
+* The *method* for setting this threshold parameter is what I am trying to determine here using known NCVs from the literature that disrupt/create a binding site.
+* Note that most results have at least 1 allele with a negative PSSM score.
+
+
+```{r}
+## Gain-of-binding plot
+gain <- filter(allResults, (delta> 2)) %>% filter(., MUT_lo>0)
+ggplot(gain, aes(x=WT_lo,y=MUT_lo, color=TF)) + geom_point() + #facet_wrap(~set) +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  ylab("MUT allele PSSM log-odds") + xlab("MUT allele PSSM log-odds") +
+  theme(axis.title.x=element_text(size=14), axis.text.x=element_text(size=14),
+        axis.title.y=element_text(size=14), axis.text.y=element_text(size=14),
+        strip.text.x=element_text(size=14)) + theme(legend.position="none")
+
+## Loss-of-binding plot
+loss <- filter(allResults, (delta< -2)) %>% filter(., WT_lo>0)
+ggplot(loss, aes(x=WT_lo,y=MUT_lo, color=TF)) + geom_point() + #facet_wrap(~set) +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  ylab("MUT allele PSSM log-odds") + xlab("MUT allele PSSM log-odds") +
+  theme(axis.title.x=element_text(size=14), axis.text.x=element_text(size=14),
+        axis.title.y=element_text(size=14), axis.text.y=element_text(size=14),
+        strip.text.x=element_text(size=14)) + theme(legend.position="none")
+```
+
+
+## Stats for ms
+
+```{r}
+length(unique(gain$ID))  # 497 allele pairs with gain of binding
+length(unique(loss$ID))  # 583 allele pairs with loss of binding
+```
+
+
+
+## Combine the GOB and LOB datasets
+
+
+```{r}
+loss$lab <- "loss"
+gain$lab <- "gain"
+combine <- rbind(loss,gain)
+```
+
+
+* Plot distribution of the delta values on the restricted set.
+
+
+```{r}
+g <- ggplot(combine, aes(delta)) + geom_histogram(bins=40) + 
+  geom_vline(xintercept = 1.5, col="red") + geom_vline(xintercept = -1.5, col="red") +
+  ylab("Count") + xlab("Delta LOR (MUT - WT)") +
+  theme(axis.title.x=element_text(size=24), axis.text.x=element_text(size=24),
+        axis.title.y=element_text(size=24), axis.text.y=element_text(size=24))
+
+# png("RM78-EIDs_WGS_allRegulStates_deltaLO_noFilter.png",width = 500,height = 400)
+g
+# dev.off();
+```
+
+```{r}
+## sort data frames for inspection of events with largest effect size
+gain_sorted <- gain[rev(order(gain$delta)),]
+loss_sorted <- loss[order(loss$delta),]
+```
+
+
+Now I have eliminated the events that have a small effect size, or have MUT and WT scores that are less than 0 (less surprising than background).
+Visualize the GOB and LOB events together.
+
+
+```{r}
+ggplot(combine, aes(x=WT_lo,y=MUT_lo, color=lab,size=1.5)) + geom_point() +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  ylab("Mutant allele log odds") + xlab("WT allele log odds") +
+  theme(axis.title.x=element_text(size=24), axis.text.x=element_text(size=24),
+        axis.title.y=element_text(size=24), axis.text.y=element_text(size=24),
+        legend.text = element_text(size = 24),legend.title = element_text(size = 24))
+```
+
+
+## Get actual threshold ranges for motifs returned.
+
+
+```{r}
+t <- group_by(allResults,TF,set) %>% summarise(., min(threshold))
+m <- melt(t)
+ggplot(m, aes(x=TF,y=value, color=set)) + geom_point(size=3) #+ facet_wrap(~study,scales = "free_x") +
+  ylab("Threshold value\nlog odds over background (40%GC)") + xlab("PSSM cognate factor") +
+  theme(axis.title.x=element_text(size=14), axis.text.x=element_text(size=14, angle = 30, vjust=.5),
+        axis.title.y=element_text(size=14), axis.text.y=element_text(size=14),
+        strip.text.x=element_text(size=14))
+```
+
+# Examine candidate oncogenes or TSGs
+
+## Onocogenes
+Create a small data frame for each interesting TF, then I can append that data to the graph above.
+
+```{r warning=FALSE}
+fli1 <- filter(combine, TF=="FLI1")
+fli1$lab <- "fli1"
+myc <- filter(combine,TF=="Myc")
+myc$lab <- "myc"
+egr1 <- filter(combine,TF=="EGR1")
+egr1$lab <- "egr1"
+maxtf <- filter(combine,TF=="MAX")
+maxtf$lab <- "max"
+etv1 <- filter(combine,TF=="ETV1")
+etv1$lab <- "etv1"
+nfkb2 <- filter(combine,TF=="NFKB2")
+nfkb2$lab <- "nfkb2"
+mycmax <- filter(combine,TF=="MAX::MYC")
+mycmax$lab <- "mycmax"
+runx1 <- filter(combine,TF=="RUNX1")
+runx1$lab <- "runx1"
+ets1 <- filter(combine,TF=="ETS1")
+ets1$lab <- "ets1"
+
+smads <- filter(gain_sorted, TF=="SMAD2::SMAD3::SMAD4")
+smads$lab <- "smads"
+jund <- filter(gain_sorted, TF=="JUND")
+jund$lab <- "jund"
+fos_jun <- filter(combine, TF=="FOS::JUN")
+fos_jun$lab <- "fox_jun"
+```
+
+## TSGs
+
+```{r warning=FALSE}
+foxp1 <- filter(combine,TF=="FOXP1")
+foxp1$lab <- "foxp1"
+ebf1 <- filter(combine,TF=="EBF1")  ## translocations in Hodgkin's lymphoma
+ebf1$lab <- "ebf1"
+nfkb2 <- filter(combine,TF=="NFKB2")
+nfkb2$lab <- "nfkb2"
+myod1 <- filter(combine,TF=="Myod1")  ## mutated in rhabdomyosarcoma.
+myod1$lab <- "myod1"
+foxo3 <- filter(combine,TF=="FOXO3")  ## translocations with MLL in acute secondary lymphoma
+foxo3$lab <- "foxo3"
+foxa1 <- filter(combine,TF=="FOXA1")  ## FOXO3 translocations with MLL in acute secondary lymphoma
+foxa1$lab <- "foxa1"
+prdm1 <- filter(combine,TF=="PRDM1")  ## inactivated in Burkitt's lymphoma
+prdm1$lab <- "prdm1"
+tfap2a <- filter(combine,TF=="TFAP2A")  ## inactivated in Burkitt's lymphoma
+tfap2a$lab <- "tfap2a"
+```
+
+##Plot specific TFBS GOB/LOB candidate events over the entire dataset.
+
+```{r}
+cbPalette <- rev(c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"))
+allDat <- rbind( combine, nfkb2 )
+allDat$lab <- factor(allDat$lab, levels=c("gain","nfkb2","loss"))
+
+ggplot(allDat, aes(x=WT_lo,y=MUT_lo, color=lab,size=1.5)) + geom_point() +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  ylab("Mutant allele log odds") + xlab("WT allele log odds") +
+  scale_color_manual(values = cbPalette) +
+  theme(axis.title.x=element_text(size=24), axis.text.x=element_text(size=24),
+        axis.title.y=element_text(size=24), axis.text.y=element_text(size=24),
+        legend.text = element_text(size = 24),legend.title = element_text(size = 24))
+```
+
