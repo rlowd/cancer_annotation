@@ -177,6 +177,7 @@ hist(p$numNcvs,breaks = 10, xlim = c(0,nk+5));abline(v=nk, col="red")
 
 
 ## Filter significant pathways
+* Histogram of gene hits across 1000 smiulations
 
 ```{r}
 pval_lt_0.05_with_numGenes <- filter(mc_with_pval, pval <=0.05)
@@ -185,6 +186,20 @@ pval_lt_0.05_with_numGenes <- filter(mc_with_pval, pval <=0.05)
 write.table("pval_lt_0.05_with_numGenes.tsv", quote = F, row.names = F, col.names = T, sep = "\t")
 ```
 
+* Inspect specific gene hits
+
+```{r}
+# KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION geneset-12.txt
+# KEGG_DRUG_METABOLISM_CYTOCHROME_P450 geneset-43.txt
+
+d <- read.table( file = "geneset-43.txt", skip = 2, col.names="SYMBOL")
+overlap <- data.frame(unique(merge(x = gs_names, y = d, by = "SYMBOL")))
+overlap
+
+s <- filter(gs, grepl( "1544|1571|1576|2329|2940|54659|54657|54579", genes.gene_id, perl = T))
+s$genes.start - s$re.start
+
+```
 
 
 
