@@ -8,7 +8,7 @@ output: html_document
 Gene set annotations for NCVs in ChromHMM-18 regulatory states (1,2,7,8,14,15).
 
 ```{r}
-setwd("~/cancer_annotation/enrichment/union_byChromHMM-18/gene_set_annot")
+setwd("~/cancer_annotation/KEGG/")
 library(AnnotationDbi)
 library(org.Hs.eg.db)
 library(dplyr)
@@ -19,10 +19,15 @@ library(dplyr)
 ```{r, echo=FALSE}
 # Genes associated w/ ChromHMM18 regulatory state NCVs
 # Gene assignments made using GREAT
-gs <- read.table("GREAT-assocGenes_RM78-EIDs_allRegulStates_livWgsNcvs.txt",sep="\t",
-                 colClasses = c("factor","NULL"), skip = 1 )
-colnames(gs) <- c("SYMBOL")
-  head(gs)
+# gs <- read.table("GREAT-assocGenes_RM78-EIDs_allRegulStates_livWgsNcvs.txt",sep="\t",
+#                  colClasses = c("factor","NULL"), skip = 1 )
+
+# Gene assignments from master annotation script
+gs <- read.table("RM78-EIDs_WGS_allRegulStates.SNVs_with_GeneID.tsv",sep = "\t",header = T)
+
+# Get SYMBOL names
+gs_names <- AnnotationDbi::select(x = org.Hs.eg.db, keys = as.character(gs$genes.gene_id), columns = "SYMBOL", keytype = "ENTREZID")
+  head(gs_names)
   
 # GSEA MDSig and KEGG pathway gene lists
 annot_gene_sets <- read.table("genesets",header=F)
@@ -38,13 +43,13 @@ count_gene_set_overlap <- function( fl,x ){
 #   d <- read.table(as.character("geneset-95.txt"), skip = 2, col.names="SYMBOL") 
 #   pref <- read.table( as.character("geneset-95.txt"), nrows = 1)
 
-  tab <- matrix( nrow = length(annot_gene_sets$V1), ncol = 3)
+  tab <- matrix( nrow = length(fl$V1), ncol = 3)
                      
   for( i in 1:length(fl$V1)){
     pref <- read.table( as.character(fl$V1[i]), nrows = 1)
-    name <- pref$V1[1]
+    name <- pref$V1
     d <- read.table( as.character(fl$V1[i]), skip = 2, col.names="SYMBOL")
-    overlap <- data.frame(unique(merge(x = gs, y = d, by = "SYMBOL")))
+    overlap <- data.frame(unique(merge(x = x, y = d, by = "SYMBOL")))
     tab[i,1] <- paste(name)
     tab[i,2] <- length(overlap$SYMBOL)
     tab[i,3] <- length(d$SYMBOL)
@@ -52,11 +57,131 @@ count_gene_set_overlap <- function( fl,x ){
   return( tab )
 }
 
-df <- data.frame(count_gene_set_overlap( annot_gene_sets,gs ))
+df <- data.frame(count_gene_set_overlap( annot_gene_sets,gs_names ))
 colnames(df) <- c("Pathway","numNcvs","numGenes")
   head(df)
 ```
 
+
+## Monte Carlo permutations
+
+* Function takes the list of all genes and creates a simulated gene list (`s_symbols`).
+* Simulated gene list then run though the `count_gene_set_overlap()` function as above for the observed data.
+* Retun a data frame with the results of 1000 simulations.
+
+* First create gene list:
+
+```{r}
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+txdb <- keepStandardChromosomes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+  seqlevels(txdb)
+  unique(genome(txdb))
+genes <- GenomicFeatures::genes(txdb)
+  head(genes)
+  
+gl <- data.frame(names(genes))
+  head(gl)  
+```
+
+
+```{r}
+monte_carlo <- function( sample_list, gene_annotations ){
+ 
+  all_sdf <- data.frame()
+ 
+  for( i in 1:10){
+    s <- sample(sample_list, size = 690,replace = T)
+    s_symbols <- AnnotationDbi::select(org.Hs.eg.db, keys = as.character(s),
+                                      keytype = "ENTREZID", columns = "SYMBOL")
+    sdf <- data.frame(count_gene_set_overlap( gene_annotations,s_symbols ))
+    colnames(sdf) <- c("Pathway","numNcvs","numGenes")
+    sdf$iteration <- i
+ 
+    all_sdf <- rbind(all_sdf,sdf)
+  }
+  return(all_sdf)
+}
+ 
+mc <- monte_carlo( gl$names.genes., annot_gene_sets)
+  glimpse(mc)
+
+write.table("mc_10.tsv",quote = F, row.names = F, col.names = T, sep="\t")
+```
+
+* Read in saved result.
+
+```{r}
+mc <- read.table("mc_1000.tsv",sep="\t", header = T)
+  glimpse(mc)
+```
+
+
+# Statistical test
+
+* Function to find p-value for all pahtways.
+* Returns a data frame
+
+```{r}
+pathways <- unique(mc$Pathway)
+specify_decimal <- function(x, k) format(round(x, k), nsmall=k)
+  
+# Function for finding p-values for all pathways
+find_p_value <- function( mc_data,pathway_list,obs_data ){
+ 
+  pvals <- data.frame(matrix(ncol = 2))
+  colnames(pvals) <- c("path","pval")
+ 
+  for( i in 1:186 ){
+    p <- dplyr::filter( mc_data, Pathway==paste(pathway_list[i]) )
+    p$numNcvs <- as.numeric(paste0(p$numNcvs))
+    p$numGenes <- as.numeric(paste0(p$numGenes))
+ 
+    nk <- as.numeric(paste0(obs_data$numNcvs[ obs_data$Pathway==paste(pathway_list[i]) ]))
+    sum_ns <- sum(p$numNcvs >= nk)
+    pv <- sum_ns / 1000
+ 
+    # hist(p$numNcvs,breaks = 15, xlim = c(0,nk+5));abline(v=nk, col="red")
+    a <- data.frame( cbind(paste(pathway_list[i]),specify_decimal( pv,3 )) )
+    colnames(a) <- c("path","pval")
+    pvals <- rbind( pvals,a )
+  }
+  return( pvals )
+}
+ 
+mc_with_pval <- find_p_value( mc_data = mc, pathway_list = pathways, obs_data = df )
+ 
+# Clean data
+mc_with_pval <- filter(mc_with_pval, !is.na(path))
+mc_with_pval$pval <- as.numeric(paste0(mc_with_pval$pval))
+  head(mc_with_pval)
+
+hist(mc_with_pval$pval, breaks = 20) ; abline(v=0.05, col="red")
+```
+
+
+## Inspect specific pathways
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+p <- dplyr::filter(mc, Pathway=="KEGG_PATHWAYS_IN_CANCER")
+  p$numNcvs <- as.numeric(paste0(p$numNcvs))
+  p$numGenes <- as.numeric(paste0(p$numGenes))
+  glimpse(p)  
+ 
+nk <- as.numeric(paste0(df$numNcvs[df$Pathway=="KEGG_PATHWAYS_IN_CANCER"]))
+ 
+hist(p$numNcvs,breaks = 20, xlim = c(0,nk+5));abline(v=nk, col="red")
+```
+
+
+
+
+
+
+
+* First round plots
 
 ```{r}
 labs <- read.delim("geneset_groups",header=F)
