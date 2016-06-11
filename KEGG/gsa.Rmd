@@ -165,17 +165,25 @@ hist(mc_with_pval$pval, breaks = 20) ; abline(v=0.05, col="red")
 library(dplyr)
 library(ggplot2)
 
-p <- dplyr::filter(mc, Pathway=="KEGG_PATHWAYS_IN_CANCER")
+p <- dplyr::filter(mc, Pathway=="KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION")
   p$numNcvs <- as.numeric(paste0(p$numNcvs))
   p$numGenes <- as.numeric(paste0(p$numGenes))
   glimpse(p)  
  
-nk <- as.numeric(paste0(df$numNcvs[df$Pathway=="KEGG_PATHWAYS_IN_CANCER"]))
+nk <- as.numeric(paste0(df$numNcvs[df$Pathway=="KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION"]))
  
-hist(p$numNcvs,breaks = 20, xlim = c(0,nk+5));abline(v=nk, col="red")
+hist(p$numNcvs,breaks = 10, xlim = c(0,nk+5));abline(v=nk, col="red")
 ```
 
 
+## Filter significant pathways
+
+```{r}
+pval_lt_0.05_with_numGenes <- filter(mc_with_pval, pval <=0.05)
+  pval_lt_0.05_with_numGenes
+
+write.table("pval_lt_0.05_with_numGenes.tsv", quote = F, row.names = F, col.names = T, sep = "\t")
+```
 
 
 
