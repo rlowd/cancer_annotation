@@ -1,0 +1,169 @@
+---
+title: "RT analysis"
+author: "Rebecca Lowdon"
+date: "June 6, 2016"
+output: html_document
+---
+
+Replication timing overlap analysis
+
+# RT partitions
+* RT partitions done via python script `RT_partitions.py`
+
+```{r}
+setwd("~/cancer_annotation/RT/v77/")
+
+cmd01 = "python RT_partitions.py RT_CyT49_Liver_D16_All.txt > liver_D16_all.partitions.hg19.txt"
+cmd02 = "python RT_partitions.py RT_CyT49_Liver_D16_All-2.txt > liver_D16_all-2.partitions.hg19.txt"
+
+if( !(file.exists("liver_D16_all.partitions.hg19.txt"))){
+  system( cmd01 )
+}
+
+## NTS 6/6: cmd02 returns on ly 169 lines for 2nd liver sample data.
+if( !(file.exists("liver_D16_all-2.partitions.hg19.txt"))){
+  system( cmd02 )
+}
+```
+
+* Read in values and clean data.
+
+```{r, echo=FALSE}
+library(dplyr)
+library(GenomicRanges)
+library(GenomicFeatures)
+
+rt1 <- read.table("liver_D16_all.partitions.hg19.txt",sep = "\t",header = F)
+colnames(rt1) <- c("chr","start","end","direction")
+  glimpse(rt1)
+  
+rt1_auto <- filter(rt1, chr!="chrY", chr!="chrX") #, chr!="chr15_KI270727v1_random")
+  unique(rt1_auto$chr)
+```
+
+* Get num bp in each RT partition:
+
+```{r}
+liv1_stat <- mutate(rt1_auto, w=end-start) %>% group_by(., direction) %>% summarise(., sum(w))
+  head(liv1_stat)
+  tot <- 1478862868 + 1201145767 # for liver rep 1 #1420507557 + 1261494476 # for liver rep2 # 
+  early <- 1201145767 / tot   ## 45% of dataset is early-replicating
+  late <- 1478862868 / tot   ## 55% of dataset is in late-replicating
+
+liv1_stat$bkgrd[liv1_stat$direction=="-1"] <- late
+liv1_stat$bkgrd[liv1_stat$direction=="1"] <- early
+
+liv1_stat
+tot
+```
+
+* Plot distribution of bin lengths, by signal direction:
+
+```{r}
+d <- mutate(rt1_auto, w=end-start)
+d$direction <- factor(d$direction)
+  glimpse(d)
+  
+ggplot(d, aes(w, fill=direction)) + geom_histogram(position = position_dodge(), bins=100) 
+
+png("liver1_RT_domains_boxpl.png")
+ggplot(d, aes(x=direction,y=w)) + geom_boxplot() + scale_y_log10() + geom_jitter(alpha=0.4,width = 0.8) + theme_bw(base_size = 24) + ylab("Domain width") + xlab("RT domains")
+dev.off();
+
+group_by(d, direction) %>% summarise(., min(w), median(w), mean(w), sd(w), max(w))
+
+```
+
+
+* Make into a GRanges object for analysis in context of SNVs.
+
+```{r}
+liv1_auto_gr <- makeGRangesFromDataFrame(rt1_auto,keep.extra.columns = T)
+  head(liv1_auto_gr)
+  table(elementMetadata(liv1_auto_gr))
+```
+
+
+# Compare with filtered or removed SNVs
+
+```{r}
+df <- read.table(file = "~/cancer_annotation/COSMIC/WGSv77/liver_remove_WGS_hg19_v77_975.bed",header=F,sep="\t")
+df <- read.table(file = "~/cancer_annotation/COSMIC/WGSv77/liver_keep_WGS_hg19_v77_975.bed",header=F,sep="\t")
+
+colnames(df) <- c("chr","start","end","cosmicID","sampleID","ExSeq","FATHMM_score")
+df <- filter(df, chr!="chrY", chr!="chrX")
+  head(df)
+
+SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T, ignore.strand = T)
+SNVs <- dropSeqlevels(SNVs, c("chr23","chr24") )
+  seqlevels(SNVs)
+  head(SNVs)
+  length(SNVs)  # v77 hg19 kept: 2854 ; removed: 3872 (autosomes only!)
+```
+
+* Use overlap function to get # of SNVs in each `liv1_auto_gr` region.
+
+```{r}
+SNVs_by_RT <- as.data.frame(mergeByOverlaps(SNVs, liv1_auto_gr))
+SNVs_by_RT <- dplyr::select(SNVs_by_RT, -cosmicID, -sampleID, -ExSeq, -FATHMM_score, -direction)
+  glimpse(SNVs_by_RT)
+  dim(SNVs_by_RT)
+  length(unique(SNVs_by_RT$SNVs.cosmicID))
+
+table(SNVs_by_RT$liv1_auto_gr.direction)
+head(SNVs_by_RT)
+```
+
+* At this point, enter values into Chi-squared test in Excel.
+
+```{r}
+liv1_stat$snv_counts[liv1_stat$direction=="1"] <- 
+length(SNVs_by_RT$SNVs.cosmicID[SNVs_by_RT$liv1_auto_gr.direction=="1"])/dim(SNVs_by_RT)[1]
+
+liv1_stat$snv_counts[liv1_stat$direction=="-1"] <- 
+length(SNVs_by_RT$SNVs.cosmicID[SNVs_by_RT$liv1_auto_gr.direction=="-1"])/dim(SNVs_by_RT)[1]
+
+liv1_stat
+
+mat <- cbind(liv1_stat$snv_counts,liv1_stat$bkgrd)
+mat
+fisher.test(mat,alternative = "g")
+
+```
+
+
+## Based on overlap done on command line
+* using bash script
+
+```{r}
+d <- read.table("liver_keep_WGS_hg38.bed_vs_liver_R2",header = F,sep = "\t")
+d <- read.table("liver_keep_WGS_hg19_v77_975__vs__liver_D16_partions",header = F)
+colnames(d) <-c("chr","start","end","direction","count_snvs")
+d$direction <- factor(d$direction)
+glimpse(d)
+
+d1 <- group_by(d, direction) %>% summarise(., sum(count_snvs))
+d2 <- group_by(d, direction) %>% mutate(., w=end-start) %>% summarise(., sum(w))
+
+d_stat <- cbind(d1,d2[,2])
+d_stat
+```
+
+* Removed values
+
+```{r}
+r <- read.table("liver_remove_WGS_hg38.bed_vs_liver_R2",header = F,sep = "\t")
+colnames(r) <-c("chr","start","end","direction","count_snvs")
+r$direction <- factor(r$direction)
+glimpse(r)
+
+r1 <- group_by(r, direction) %>% summarise(., sum(count_snvs))
+r2 <- group_by(r, direction) %>% mutate(., w=end-start) %>% summarise(., sum(w))
+
+r_stat <- cbind(r1,r2[,2])
+
+r_stat
+
+```
+
+* Then use Chi-squared test (e.g. in Excel: http://www.real-statistics.com/chi-square-and-f-distributions/independence-testing/)

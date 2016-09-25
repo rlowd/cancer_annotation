@@ -14,7 +14,7 @@ output:
 Rmd file to take SNV positions to match them with regulatory elmenets, then assign those regulatory elements (REs) to putative target gene promoters.
 
 ```{r, message=FALSE}
-setwd("/bar/rlowdon/cancer_annotation/counts_per_element/")
+setwd("/bar/rlowdon/cancer_annotation/counts_per_element/v77/")
 library("AnnotationDbi")
 library("org.Hs.eg.db")
 ```
@@ -25,7 +25,8 @@ library("org.Hs.eg.db")
 ```{r, message=FALSE}
 library("GenomicFeatures")
 library("GenomicRanges")
-df <- read.table(file = "~/cancer_annotation/COSMIC/WGSv75/liver_keep_L3-WGS_hg19.bed",header=F,sep="\t")
+df <- read.table(file = "~/cancer_annotation/COSMIC/WGSv77/liver_keep_WGS_hg19_v77_975.bed",header=F,sep="\t")
+# df <- read.table(file = "~/cancer_annotation/COSMIC/WGSv77/liver_keep_ExSeq_hg19_v77_99.bed",header=F,sep="\t")
 colnames(df) <- c("chr","start","end","cosmicID","sampleID","ExSeq","FATHMM_score")
   head(df)
 SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T, ignore.strand = T)
@@ -40,44 +41,114 @@ SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T, ignore.strand = T)
 * NTS: not actually using the gene-assignment made here, just use it for counting purposes. SNV-containing REs are assigned to genes uing my own criteria, below.
 
 ```{r, message=FALSE}
-library("VariantAnnotation")
-library("AnnotationHub")
-library("TxDb.Hsapiens.UCSC.hg19.knownGene")
-library("dplyr")
+library(VariantAnnotation)
+library(AnnotationHub)
+# library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
-txdb <- keepStandardChromosomes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+# txdb <- keepStandardChromosomes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+txdb <- loadDb(file = "~/genomes/hg19/annotation/ucscKnownGenes_txdb.sqlite")
+  seqlevels(txdb, force = T) <- seqlevels(txdb)[1:22]
   seqlevels(txdb)
   unique(genome(txdb))
 
-loc_snvs <- locateVariants(SNVs, txdb, AllVariants())
-  head(loc_snvs,2)
-  # loc_snvs[mcols(loc_snvs)$QUERYID == 3]
-  length(loc_snvs)
   
-# Determine counts based on unique GRanges metadata fields
-loc_snvs_metadat <- data.frame(elementMetadata(loc_snvs))
-  dim(loc_snvs_metadat)
-loc_snvs_noNAs_df <- dplyr::select( loc_snvs_metadat, LOCATION, QUERYID, GENEID)  
-loc_snvs_noNAs_uniq_df <- unique(loc_snvs_noNAs_df)
-  head(loc_snvs_noNAs_uniq_df,2)
+# Genic features
+  
+ucsc.promoters <- promoters(txdb, upstream = 2000,downstream = 500)
+ucsc.promoters <- reduce(ucsc.promoters)
+promoter_len <- sum(width(ucsc.promoters))
+promoter_len
 
-# Account for some intergenic calls sometimes also called in a gene element
-intergenic_NAs <- filter(loc_snvs_noNAs_uniq_df, LOCATION=="intergenic")
-non_intergenic_NAs <- filter(loc_snvs_noNAs_uniq_df, LOCATION!="intergenic", is.na(GENEID))
-  head(non_intergenic_NAs)
+ucsc.introns <- sort(unlist(intronsByTranscript(txdb)))
+ucsc.introns <- reduce(ucsc.introns)
+head(ucsc.introns)
+intron_len <- sum(width(ucsc.introns))
+intron_len
 
-num_QUERYIDs_with_NA_GENEID_in_both_sets <- sum(non_intergenic_NAs$QUERYID %in% intergenic_NAs$QUERYID)
+ucsc.exons <- sort(unlist(exonsBy(txdb, by = "gene")))
+ucsc.exons <- reduce(ucsc.exons)
+head(ucsc.exons)
+exon_len <- sum(width(ucsc.exons))
+exon_len
 
-# table of SNVs per gene element, before correction
-table(loc_snvs_noNAs_uniq_df$LOCATION)
-# table(loc_snvs$LOCATION)
+ucsc.5UTRs <- sort(unlist(fiveUTRsByTranscript(txdb)))
+ucsc.5UTRs <- reduce(ucsc.5UTRs)
+head(ucsc.3UTRs)
+UTR_5_len <- sum(width(ucsc.5UTRs))
+UTR_5_len
+
+ucsc.3UTRs <- sort(unlist(threeUTRsByTranscript(txdb)))
+ucsc.3UTRs <- reduce(ucsc.3UTRs)
+head(ucsc.3UTRs)
+UTR_3_len <- sum(width(ucsc.3UTRs))
+UTR_3_len
+
+# Intergenic regions
+# First get trascript length, then subtract
+
+ucsc.tx <- sort(unlist(transcriptsBy(by = "gene", txdb)))
+ucsc.tx <- reduce(ucsc.tx)
+head(ucsc.tx)
+tx_len <- sum(width(ucsc.tx))
+tx_len
+
+
+# Get hits
+prom_hits <- sum(countOverlaps(SNVs, ucsc.promoters))
+intron_hits <- sum(countOverlaps(SNVs, ucsc.introns))
+exon_hits <- sum(countOverlaps(SNVs, ucsc.exons))
+UTR_5_hits <- sum(countOverlaps(SNVs, ucsc.5UTRs))
+UTR_3_hits <- sum(countOverlaps(SNVs, ucsc.3UTRs))
+
+tx_hits <- sum(countOverlaps(SNVs, ucsc.tx))
+# length of the hg19 assembly (w/o N's) from the hGRC: http://www.ncbi.nlm.nih.gov/projects/genome/assembly/grc/human/data/
+hg19TotalNonN_len <- 3071178559
+intergenic_len <- hg19TotalNonN_len - tx_len
+intergenic_hits <- sum( SNVs %outside% ucsc.tx )
 ```
+
+* Normalized plot with precise values (July 27, 2016)
+
+```{r}
+df <- data.frame( cbind( 
+  c(prom_hits, UTR_5_hits, intron_hits, UTR_3_hits, intergenic_hits), 
+  c(prom_hits/promoter_len, UTR_5_hits/UTR_5_len, intron_hits/intron_len, UTR_3_hits/UTR_3_len, intergenic_hits/intergenic_len),
+  c(promoter_len, UTR_5_len, intron_len, UTR_3_len, intergenic_len)) )
+  
+colnames(df) <- c("hits","normalizedHits","featureLength")
+rownames(df) <- c("Promoter","5'UTR","Intron","3'UTR","Intergenic")
+
+df$exp <- sapply( df$featureLength, function(x) (x/hg19TotalNonN_len)*length(SNVs) )
+df$fold <- df$hits/df$exp
+df$Set <- rownames(df)
+df$Set <- factor(df$Set, levels=c("5'UTR","Promoter","Intron","3'UTR","Intergenic"))
+df
+
+cols <- c("#FFCC00","#6600CC","#FFCC00","#FFCC00","#3399FF")
+
+g <- ggplot(df, aes(x=reorder(Set, fold), y=fold, fill=Set)) + geom_bar(stat="identity", fill="gray75") 
+g <- g + xlab("") + ylab("Observed noncodingSNVs/\nexpected by feature") + 
+  theme_classic(base_size = 30) + theme(panel.background = element_rect(color="black")) + coord_flip() +
+  geom_hline(yintercept = 1)
+
+  theme(axis.text.x=element_text(angle=90,vjust = .5))
+
+png("liverWgsSnv_UcscKnownGenesAnnot.07272016.WGSv77.png",width = 600,height = 500)
+g
+dev.off();
+
+pdf("liverWgsSnv_UcscKnownGenesAnnot.07302016.pdf", height = 6, width = 7.5)
+g
+dev.off();
+
+```
+
 
 * Now plot:
 
 ```{r, message=FALSE}
 library(ggplot2)
-
+library(dplyr)
 df <- data.frame(table(loc_snvs_noNAs_uniq_df$LOCATION))
 
 # Correct for inappropriately counted intergenic hits:
@@ -85,22 +156,102 @@ df$Freq[df$Var1=="intergenic"] <- df$Freq[df$Var1=="intergenic"] - num_QUERYIDs_
 df             # Corrected values (intergenic hits = 838)
 sum(df$Freq)   # Total, corrected, num of SNV-to-element assignments
 
-df$Var1 <- factor(df$Var1, levels = c("promoter","threeUTR","coding","intron",
-                                      "spliceSite","fiveUTR","intergenic"))
+df_clean <- filter(df, !is.na(Set))
 
-g <- ggplot(df, aes(x=Var1, y=Freq)) + geom_bar(stat="identity")
-g <- g + ggtitle("Annotation of filtered Cosmic liver cancer SNVs\nby UCSC known genes")
-g <- g + xlab("") + ylab("Noncoding somatic SNVs") + theme_bw(base_size = 20) #+
+df_clean$Var1 <- factor(df_clean$Var1, levels = c("promoter","threeUTR","intron","fiveUTR","intergenic"))
 
-png("liverWgsSnv_UcscKnownGenesAnnot.png",width = 600,height = 400)
+
+df_clean$Set <- c("Intron","UTR","UTR","Intergenic","Promoter")
+df_clean$Set <- factor(df_clean$Set, levels=c("Promoter","UTR","Intron","Intergenic"))
+
+cols <- c("#6600CC","#FFCC00","#FFCC00","#FFCC00","#3399FF")
+
+
+g <- ggplot(df_clean, aes(x=Set, y=Freq, fill=Set)) + geom_bar(stat="identity", fill=cols)
+# g <- g + ggtitle("Annotation of filtered Cosmic liver cancer SNVs\nby UCSC known genes")
+g <- g + xlab("") + ylab("Noncoding somatic SNVs") + theme_classic(base_size = 28) #+
+
+g
+
+```
+
+* Now normalize given genome feature length.
+
+```{r}
+genl <- 3100000000
+tot_ucsc_known_genes <- 22751
+tot_promoter_len <- 1500 * tot_ucsc_known_genes
+utr_len <- 1400 * tot_ucsc_known_genes  # approx 700 for 3' and 5' UTR per gene
+  mean_intron_len <- 1309   #http://mbe.oxfordjournals.org/content/23/12/2392/T2.expansion.html
+  tot_num_introns <- 207344  #http://content.iospress.com/articles/in-silico-biology/isb00142
+tot_intron_len <- .15 * genl  #mean_intron_len*tot_num_introns
+  len_coding_exons <- 0.015 * genl
+tot_intergenic <- (0.85 * genl) - tot_promoter_len - tot_intron_len - utr_len
+
+denom <- c(tot_intron_len,utr_len,utr_len,tot_intergenic, tot_promoter_len)
+
+df_norm <- mutate(df_clean, norml = Freq/denom)
+```
+
+* Then plot
+
+```{r}
+g <- ggplot(df_norm, aes(x=Set, y=norml, fill=Set)) + geom_bar(stat="identity", fill=cols)
+g <- g + xlab("") + ylab("Noncoding somatic SNVs") + theme_classic(base_size = 28) #+
+
+png("liverWgsSnv_UcscKnownGenesAnnot.NORM.WGSv77.png",width = 600,height = 400)
 g
 dev.off();
 ```
 
 
+* A few stats:
+
+```{r}
+# length(unique(loc_snvs_noNAs_uniq_df$QUERYID[loc_snvs_noNAs_uniq_df$LOCATION=="intron"]))
+# length(unique(loc_snvs_noNAs_uniq_df$GENEID[loc_snvs_noNAs_uniq_df$LOCATION=="intron"]))
+# length(unique(loc_snvs_noNAs_uniq_df$QUERYID[loc_snvs_noNAs_uniq_df$LOCATION=="promoter"]))
+# length(unique(loc_snvs_noNAs_uniq_df$GENEID[loc_snvs_noNAs_uniq_df$LOCATION=="promoter"]))
+# 
+# length(unique(loc_snvs_noNAs_uniq_df$QUERYID[loc_snvs_noNAs_uniq_df$LOCATION=="threeUTR"]))
+# length(unique(loc_snvs_noNAs_uniq_df$GENEID[loc_snvs_noNAs_uniq_df$LOCATION=="threeUTR"]))
+# length(unique(loc_snvs_noNAs_uniq_df$QUERYID[loc_snvs_noNAs_uniq_df$LOCATION=="fiveUTR"]))
+# length(unique(loc_snvs_noNAs_uniq_df$GENEID[loc_snvs_noNAs_uniq_df$LOCATION=="fiveUTR"]))
+# 
+# length(unique(loc_snvs_noNAs_uniq_df$QUERYID[loc_snvs_noNAs_uniq_df$LOCATION=="coding"]))
+# length(unique(loc_snvs_noNAs_uniq_df$GENEID[loc_snvs_noNAs_uniq_df$LOCATION=="coding"]))
+```
+
+
 ## Validate noncoding status
+
 * Use `VariantAnnotation` functions to validate SNVs are noncoding.
-* TBD
+* First isolate SNVs that fall in coding regions as annotated above.
+* Subset from the `SNVs` GRanges object in order to recover the CosmicIDs for these SNVs.
+* On command line, use `grep` to recover the allele information for the CosmicIDs set from the CosmicNCV_WGS.tsv.gz file.
+* Read this information back into R and use the MUT allele information as the varAllele argument to `predictCoding()` function.
+
+```{r}
+coding_snvs <- loc_snvs[loc_snvs$LOCATION=="coding"]
+
+hits <- subsetByOverlaps(SNVs, coding_snvs)
+hits_met <- as.data.frame(elementMetadata(hits))
+coding_snvs_comicID <- hits_met$cosmicID
+
+write.table(coding_snvs_comicID, file = "coding_SNVs_CosmicIDs.tsv",sep = "\t",quote = F, row.names = F, col.names = F)
+# grep on command line to recover WT and MUT alleles from COSMIC WGS NCV file.
+alleles <- read.table("~/cancer_annotation/COSMIC/WGSv75/coding_hits",header = F,sep="\t",
+                      colClasses = c("NULL","NULL","factor","NULL","NULL","NULL","NULL","factor","factor",
+                                     "NULL","NULL","NULL","NULL","NULL","NULL","NULL","NULL"))
+colnames(alleles) <- c("cosmicID","WT","MUT")
+
+library(BSgenome.Hsapiens.UCSC.hg19)
+hits_predicted_coding <- predictCoding(query = hits, subject = txdb, seqSource = BSgenome.Hsapiens.UCSC.hg19, varAllele = DNAStringSet(alleles$MUT))
+  table(hits_predicted_coding$CONSEQUENCE)
+
+```
+
+* All 44 SNVs in coding regions are frameshift mutations.
 
 
 ## Intron distribution
@@ -114,19 +265,23 @@ dev.off();
 + Then if not done already, run the python script.
 
 ```{r}
-cmd0 = "bash" 
-cmd1 = "intersectBed -wo -a autosomesHg19_enhPriority_merged_enh.bed -b liver_keep_L3-WGS_hg19.bed > enhAndProm_RE_hits"
-cmd2 = "python analyze_element_counts.py enhAndProm_RE_hits > enhAndProm_RE_hits.bed"
+# cmd0 = "bash softLink_files_for_annotations.sh" 
+cmd1 = "intersectBed -wo -a autosomesHg19_enhPriority_merged_enhAndProm.bed -b liver_keep_WGS_hg19_v77_975.bed > enhAndProm_hits"
+cmd2 = "python ../analyze_element_counts.py prom_hits > enhAndProm_hits.bed"
+
+# use only promoters for ExSeq
+cmd1 = "intersectBed -wo -a autosomesHg19_promPriority_merged_prom.07192016.bed -b liver_keep_ExSeq_hg19_v77_99.bed > prom_hits"
+cmd2 = "python ../analyze_element_counts.py prom_hits > livExSeqSNVs_promPriorityHits.bed"
 
 if( !(file.exists("autosomesHg19_enhPriority_merged_enhAndProm.bed"))){
   system( cmd0 )
 }
-
+#
 if( !(file.exists("enhAndProm_RE_hits"))){
   system( cmd1 )
 }
 
-if( !(file.exists("enhAndProm_RE_hits.bed"))){ 
+if( !(file.exists("livExSeqSNVs_promPriorityHits.bed"))){
   system( cmd2 )
 }
 ```
@@ -136,12 +291,17 @@ if( !(file.exists("enhAndProm_RE_hits.bed"))){
 * Here I want to read in the SNV-element assignment file as a GRanges object.
 
 ```{r}
-df <- read.table("enhAndProm_RE_hits.bed",header=F, sep = "\t")
+# df <- read.table("enhAndProm_RE_hits.bed__WGSv77-allREs",header=F, sep = "\t")
+df <- read.table("livExSeqSNVs_promPriorityHits.bed",header=F, sep = "\t", skip = 1)
+
 colnames(df) <- c("chr","start","end","num_SNVs","CosmicIDs")
   head(df)
+
+sum(df$num_SNVs)  ## Total # of SNVs in REs = 1394 (49.7%); v77=3200 (40.5%)
+
 elements_with_SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T)
   head(elements_with_SNVs)
-  length(elements_with_SNVs)  
+  length(elements_with_SNVs)  # v77 = 3108 elements w/ SNVs
 ```
 
 * NTS:
@@ -149,6 +309,19 @@ elements_with_SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T)
 * 6/1: now 1316 after adding CosmicID field to python code.
   + When I ask how many unique starts are in the enhAndProm_RE_hits input, only 1327.
   + It makes sense that the total elements in the adjacent merged bedfile output is less than 1327.
+
+
+## Plot Num SNVs per SNV-containing RE
+
+```{r}
+g <- ggplot(df, aes(x=reorder(CosmicIDs,-num_SNVs),y=num_SNVs)) + geom_bar(stat="identity", width = 2, fill="black", position = position_dodge(), color="black")
+g <- g + xlab("Regulatory elements") + ylab("Num SNVs") + theme_classic(base_size = 24) +
+  theme(axis.text.x=element_blank())
+
+png("num_SNVs_by_RE.png",width = 800,height = 400)
+g
+dev.off();
+```
 
 
 ## Function to assign SNV-containing REs to target promoters
@@ -159,6 +332,10 @@ elements_with_SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T)
   + My custom function takes advantage of the `make.row.names=F` argument to the `rbind()` function in order to eliminate the redundant rownames issue that I was getting simply using the `makeGRangesFromDataFrame()` function.
 
 ```{r}
+# UCSC Genes Version
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+# txdb <- keepStandardChromosomes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+txdb <- loadDb(file = "~/genomes/hg19/annotation/ucscKnownGenes_txdb.sqlite")
 genes <- GenomicFeatures::genes(txdb) 
 
 get_gene <- function( x,y ){
@@ -180,16 +357,82 @@ get_gene <- function( x,y ){
 tmp <- get_gene( elements_with_SNVs, genes )  
   sum(duplicated(rownames(tmp)))
   dim(tmp)
+```
 
+
+```{r}
+# Gencode version
+gencode <- loadDb(file =  "~/genomes/hg19/Gencodev24/gencode_basic_v24.sqlite")
+genes <- GenomicFeatures::genes(gencode)
+get_gene <- function( x,y ){
+  re <- x[1]
+  genes <- y
+  re_w_genes <-mergeByOverlaps( genes , re , maxgap=35000, select="all", ignore.strand=T, type="start") # For type = start, end, and equal, MAXGAP specifies the maximum difference in the starts, ends or both, respectively.
+  df <- as.data.frame(re_w_genes)
+  
+  len <- length(x)
+  
+  for( i in 2:len){
+    re <- x[i]  # for test case, edit `i` here.
+    re_w_genes <-mergeByOverlaps( genes , re , maxgap=35000, select="all", ignore.strand=T, type="start")
+    df <- rbind( as.data.frame(re_w_genes),df, make.row.names=F )
+  }
+  return(df)
+}
+
+tmp <- get_gene( elements_with_SNVs, genes )  
+noncoding_with_gene_promoters_df <- dplyr::select(tmp, -gene_id)
+
+get_ensg <- function( g ){
+  ensg <- unlist(strsplit(x=g, split = ".", fixed = T))[1]
+  return( ensg )
+}
+
+ensg_ids <- data.frame(t(data.frame( lapply(X = noncoding_with_gene_promoters_df$genes.gene_id, FUN = get_ensg) )))
+colnames(ensg_ids) <- "ensg"
+
+
+## Get unique noncoding hit genes list
+noncod_gene_names <- data.table(AnnotationDbi::select(x = org.Hs.eg.db, 
+                                                      keys = as.character(ensg_ids$ensg), columns = "SYMBOL", keytype = "ENSEMBL") )
+# noncod_gene_names <- unique(noncod_gene_names)
+noncod_gene_names <- dplyr::filter(noncod_gene_names, !is.na(SYMBOL))
+noncod_gene_names <- dplyr::filter(noncod_gene_names, !grepl("LOC", x = SYMBOL))
+
+## Write out gene lists
+nc_fn <- paste( "RM78-EIDs_WGS_allRegulStates.v77.Gencode_hitGenes.tsv", sep="" )
+if( !file.exists(nc_fn) ){  file.create(nc_fn)  }
+write.table(x = noncod_gene_names, file = nc_fn, quote = F, sep = "\t", row.names = F, col.names = T)
+
+```
+
+
+* Analyze, clean, and save SNV-RE to promoter mappings.
+
+```{r}
 elements_with_gene_promoters_df <- dplyr::select(tmp, -num_SNVs, -gene_id, -CosmicIDs)  # drop some metadat columns that get duplicated
   head(elements_with_gene_promoters_df,3)  
   dim(elements_with_gene_promoters_df)
   length(unique(elements_with_gene_promoters_df$re.start))
-  length(unique(elements_with_gene_promoters_df$genes.start))
+  length(unique(elements_with_gene_promoters_df$genes.gene_id))
+  sum(elements_with_gene_promoters_df$re.num_SNVs)
+write.table(elements_with_gene_promoters_df, file = "RM78-EIDs_WGS_allRegulStates.v77.SNVs_df_with_UcscKnownGenes.tsv", quote = F, sep = "\t",row.names = F, col.names = T)
+
+
+# Read in file again to start here:
+elements_with_gene_promoters_df <- read.table("RM78-EIDs_WGS_allRegulStates.v77.SNVs_df_with_UcscKnownGenes.tsv", sep = "\t", header = T)
+```
+
+* Tabulate counts and inspect top hit REs.
+
+```{r}
+group_by(df, num_SNVs) %>% summarise(., n())
+filter(df, num_SNVs >=3)
 ```
 
 * So there are 743 SNV-containing RE-to-target promoter assignments, involving 692 regulatory elements and 705 target gene promoters.
   + 6/1: 690 assignmnets involving 644 REs and 654 unique promoters.
+
 
 ## Distance from SNV-containing regulatory elements to gene start
 * Sanity check. All distances should be <35kb.
@@ -206,10 +449,37 @@ dev.off();
 * What are the genes with 2 or 3 SNV-containing elements assigned to their promoters?
 
 ```{r}
+## UCSC version
 a <- group_by(elements_with_gene_promoters_df, genes.gene_id) %>% summarise(., n() ) %>% filter(., `n()`>1) 
 colnames(a) <- c("ENTREZID","n")
-b <- AnnotationDbi::select(x = org.Hs.eg.db, keys = a$ENTREZID, columns = "SYMBOL", keytype = "ENTREZID")
+a$ENTREZID <- as.character(paste0(a$ENTREZID))
+
+# ensg_ids <- data.frame(t(data.frame( lapply(X = as.character(a$ENSEMBL), FUN = get_ensg) )))
+# colnames(ensg_ids) <- "ensg"
+
+b <- AnnotationDbi::select(x = org.Hs.eg.db, keys = as.character(a$ENTREZID), columns = "SYMBOL", keytype = "ENTREZID")
 top_hit_genes <- inner_join(a,b,by="ENTREZID")
+  top_hit_genes
+```
+
+
+```{r}
+## Recurrently hit genes
+## Gencode version
+ensg_ids <- data.frame(t(data.frame( lapply(X = elements_with_gene_promoters_df$genes.gene_id, FUN = get_ensg) )))
+colnames(ensg_ids) <- "ensg"
+
+a <- group_by(ensg_ids, ensg) %>% summarise(., n() ) %>% filter(., `n()`>1) 
+colnames(a) <- c("ENSEMBL","n")
+
+b <- AnnotationDbi::select(x = org.Hs.eg.db, keys = as.character(ensg_ids$ensg), columns = "SYMBOL", keytype = "ENSEMBL")
+
+## Clean SYMBOL data
+b <- unique(b)
+b <- dplyr::filter(b, !is.na(SYMBOL))
+b <- dplyr::filter(b, !grepl("LOC", x = SYMBOL))
+
+top_hit_genes <- inner_join(a,b,by="ENSEMBL")
   top_hit_genes
 ```
 
@@ -227,6 +497,15 @@ C1orf61_snvs <- filter(elements_with_gene_promoters_df, genes.gene_id == 10485)
 * C1orf61 has three unique REs assigned to it, each with 1 SNV.
 * The REs are all downstream: -345, -3345, and -15.9kb respectively.
 
+### MAP2K1
+
+```{r}
+map2k1_snvs <- filter(elements_with_gene_promoters_df, genes.gene_id == 5604)
+  head(map2k1_snvs)
+  map2k1_snvs$genes.start - map2k1_snvs$re.start ; print( map2k1_snvs$re.CosmicIDs )
+```
+
+
 
 ## Plot distribution of num REs per gene promoter
 
@@ -234,13 +513,13 @@ C1orf61_snvs <- filter(elements_with_gene_promoters_df, genes.gene_id == 10485)
 counts <- data.frame(table(elements_with_gene_promoters_df$genes.gene_id))
 group_by(counts, Freq) %>% summarise(., n())
 
-g <- ggplot(counts, aes(x=reorder(Var1,-Freq),y=Freq)) + geom_bar(stat="identity", width = 1)
+g <- ggplot(counts, aes(x=reorder(Var1,-Freq),y=Freq)) + geom_bar(stat="identity", width = 2, fill="black", position = position_dodge(), color="black")
 g <- g + xlab("Gene promoter targets") + ylab("Num SNV-containing\nregulatory elements") + theme_classic(base_size = 24) +
   theme(axis.text.x=element_blank())
 
-png("num_REs_with_SNVs_by_promoter.png",width = 800,height = 400)
+# png("num_REs_with_SNVs_by_promoter.png",width = 800,height = 400)
 g
-dev.off();
+# dev.off();
 ```
 
 

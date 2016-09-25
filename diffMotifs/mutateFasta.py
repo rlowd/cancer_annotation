@@ -132,8 +132,8 @@ def reformat():
                 newf.write( line )
     inf.close()
     
-#    cmd3 = "rm fasta"
-#    os.system( cmd3 )
+    cmd3 = "rm fasta"
+    os.system( cmd3 )
 
 
 ## make_seqs() is the meat of this script. This function uses Biopython to create an
@@ -271,8 +271,8 @@ def build_motif_db():
 
 
 if __name__=="__main__":
-    make_fasta()
-    reformat()
+#    make_fasta()
+#    reformat()
     make_seqs()
     
     

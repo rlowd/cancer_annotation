@@ -13,6 +13,7 @@
 ##########
 
 import sys
+from sets import Set
 
 if len(sys.argv) != 2:
     print '''usage: {0} <input filename> \n\n'''.format(sys.argv[0])
@@ -36,6 +37,8 @@ with open( inf,"r" ) as f:
     st_pos = ""
     end_pos = ""
     
+    cosmIDs = Set([])
+    
     for line in f:
         
         # Variable to control if should continue searching in the current RE or 
@@ -49,6 +52,7 @@ with open( inf,"r" ) as f:
             cl = line.split("\t")
             
             
+            
             # Check if current line is in the same reg element as previous line:
             # Either same start or the adjacent elements.
             # If yes, this element gets a count of +=1
@@ -59,6 +63,9 @@ with open( inf,"r" ) as f:
                 end_pos = cl[2]
                 count +=1
                 
+                cosmIDs.add(pl[7])
+                cosmIDs.add(cl[7])
+ 
                 
                 # If in the same element, check if the mutations are in the same patient.
                 # If yes, check if they are indpendent mutations (not subsequent nts) -> count +=0
@@ -71,7 +78,6 @@ with open( inf,"r" ) as f:
                         
                     elif( cl[5] == pl[6] ):
                         count -=1
-                        
                 nextl = 0  # signal to stay on the current element.
                         
             # If the prevLine and current line are different elements,
@@ -79,12 +85,15 @@ with open( inf,"r" ) as f:
             # trigger nextl to continue to new set of input lines.            
             elif( pl[1]!=cl[1] and pl[2]!=cl[1] ):
                 
-                print "%s\t%s\t%s\t%s" % ( chr_pos,st_pos,end_pos,count)
+                print "%s\t%s\t%s\t%s\t%s" % ( chr_pos,st_pos,end_pos,count,cosmIDs)
                 
                 chr_pos = cl[0]
                 st_pos = cl[1]
                 end_pos = cl[2]
                 count = 1
+                
+                cosmIDs = Set([])
+                cosmIDs.add(cl[7])
                 nextl = 1  # signal to move on to next set of lines in file.
         
         
@@ -97,5 +106,6 @@ with open( inf,"r" ) as f:
         elif( nextl == 0 ):
             prevLine = prevLine
             count = count
+            
 
         

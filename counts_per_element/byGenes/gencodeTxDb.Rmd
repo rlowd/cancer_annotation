@@ -1,0 +1,153 @@
+---
+title: "Gencode TxDb"
+author: "Rebecca Lowdon"
+date: "May 25, 2016"
+output: html_document
+---
+
+Some code borrowed taken from: http://chitka-kalyan.blogspot.com/2014/02/creating-gencode-transcript-database-in.html
+
+```{r}
+setwd("/bar/rlowdon/cancer_annotation/counts_per_element/byGenes")
+library("GenomicFeatures")
+library("GenomicRanges")
+```
+
+
+Load chromosome info. Must be:
+```{r}
+# Add the header "chrom length  is_circular" additional column to say that none of the chromosomes are circular.
+#   chrom length  is_circular
+#   chr1 249250621       FALSE
+#   chr2 243199373       FALSE
+#   chr3 198022430       FALSE
+```
+
+```{r, echo=FALSE}
+chrom.info = read.table("~/genomes/hg19/chr_sizes", header=F)
+colnames(chrom.info) <- c("chrom","length")
+# chrom.info$isCircular <- "FALSE"
+  head(chrom.info)
+```
+
+# Gencode annotations
+Read in gencode GTF file and create TxDb object. Should only need to do this once, then export to sql db and can load quickly in the future.
+
+```{r}
+gencode <- makeTxDbFromGFF( "~/genomes/hg19/annotation/GencodeV19/gencode.v19.annotation.gtf", format="gtf", chrominfo = chrom.info, organism = "Homo sapiens", dataSource=paste("ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz"))
+
+# Save the transcriptDb object as a sql database object
+saveDb(gencode, file="~/genomes/hg19/annotation/GencodeV19/gencode_human_v19.sqlite")
+loadDb("~/genomes/hg19/annotation/GencodeV19/gencode_human_v19.sqlite")
+```
+
+Create GRanges objects for features of interest.
+
+```{r}
+genes.gencode <- sort(genes(gencode))
+  head(genes.gencode)
+  length(genes.gencode)
+
+introns.gencode <- sort(unlist(intronsByTranscript(gencode, use.names=T)))
+  head(introns.gencode)
+  length(introns.gencode)
+
+unlist(introns.gencode)
+
+```
+
+
+# UCSC annotations
+
+```{r}
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+
+genes_hg19 <- genes(txdb)
+  head(genes_hg19)
+  
+introns <- intronsByTranscript(txdb, use.names=T)
+  head(introns)
+
+```
+
+Need a better gene name assignment.
+
+```{r}
+AnnotationDbi::keytypes(org.Hs.eg.db)
+
+# Get TXNAME names for introns (or any set)  
+intron_names <- names(introns)[1:100]
+
+# Two steps using AnnotationDbi::select function to get ENTREZIDs and SYMBOLs
+a <- select(txdb, keys=intron_names, columns = "GENEID", keytype = "TXNAME")
+colnames(a) <- c("TXNAME","ENTREZID")
+b <- select(org.Hs.eg.db, keys=a$ENTREZID, columns = "SYMBOL", keytype = "ENTREZID")
+b <- filter(b, !is.na(ENTREZID))
+txname_to_symbol <- inner_join(a,b, by="ENTREZID")
+
+```
+
+# Regulatory element-to-gene promoter assignments
+* SNV-to-element assignments were made using the python script `analyze_element_counts.py`.
+* Plot of SNVs per element in `plot_RE_hits_distrib.Rmd` in the same dir.
+* Here I want to read in the SNV-element assignment file as a GRanges object.
+
+```{r}
+setwd("~/cancer_annoCtation/counts_per_element/")
+df <- read.table("../enhAndProm_RE_hits.bed",header=F)
+colnames(df) <- c("chr","start","end","num_SNVs")
+  head(df)
+elements_with_SNVs <- makeGRangesFromDataFrame(df, keep.extra.columns = T)
+  head(elements_with_SNVs)
+  length(elements_with_SNVs)  ## has 1384 enhancer and promoter elements
+```
+
+Get promoters GRanges object
+
+```{r}
+promoters <- promoters(txdb)
+  head(promoters)
+  mean(width(promoters))  ## all are 2200bp
+  length(promoters)       ## 80922 TRANSCRIPT promoters (redundant)
+```
+
+Find overlap of each element's regulatory domain with promoters
+* Use `reduce` to get non-redundant promoters (each transcript annotated individually, even if many use the same start)
+* Plot the # of promoters with at least one regulatory element containing a putatively functional SNV.
+
+```{r}
+elements_with_promoters <-mergeByOverlaps(reduce(promoters), elements_with_SNVs, maxgap=3500, select="all", ignore.strand=T) 
+  head(elements_with_promoters,50)
+  dim(elements_with_promoters)  ## is a data.frame, 646 rows = # paired RE-TRANSCRIPT promoters
+
+# tx_name <- elements_with_promoters$tx_name 
+# tx_name_to_symbol <- select(org.Hs.eg.db, keys=tx_name, columns = "SYMBOL", keytype = "UCSCKG")
+#   head(tx_name_to_symbol)
+
+hit_counts <- data.frame(countOverlaps(reduce(promoters), elements_with_SNVs, maxgap=3500, type = "any", ignore.strand=T), stringsAsFactors = F)
+colnames(hit_counts) <-c("counts")
+hit_counts <- filter(hit_counts, counts!="0")
+  head(hit_counts)
+  length(hit_counts$counts)  ## num of promoters w/ at least 1 RE
+  summary(hit_counts$counts)
+
+# Plot distribution of num REs per gene promoter.
+g <- ggplot(hit_counts, aes(x=reorder(rownames(hit_counts),-counts),y=counts)) + geom_bar(stat="identity")
+g <- g + xlab("Promoters with SNV-containing regulatory elements") + ylab("Noncoding somatic SNVs") + theme_classic() +
+  theme(
+    axis.text.x=element_blank(),axis.title.y=element_blank(),
+    axis.text.y=element_text(size=16),axis.title.x=element_text(size=16) ) 
+
+png("num_REs_with_SNVs_by_promoter.png",width = 800,height = 400)
+g
+dev.off();
+
+
+```
+
+
+
